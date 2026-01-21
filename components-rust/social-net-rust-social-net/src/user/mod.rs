@@ -1,7 +1,9 @@
 use crate::post::PostAgentClient;
+use email_address::EmailAddress;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ConnectedUser {
@@ -21,15 +23,16 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(user_id: String) -> Self {
+    fn new(user_id: String) -> Self {
+        let now = chrono::Utc::now();
         User {
             user_id,
             name: None,
             email: None,
             connected_users: HashMap::new(),
             posts: Vec::new(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: now,
+            updated_at: now,
         }
     }
 }
@@ -40,15 +43,15 @@ trait UserAgent {
 
     fn get_user(&self) -> Option<User>;
 
-    fn set_name(&mut self, name: Option<String>);
+    fn set_name(&mut self, name: Option<String>) -> Result<(), String>;
 
-    fn set_email(&mut self, email: Option<String>);
+    fn set_email(&mut self, email: Option<String>) -> Result<(), String>;
 
-    fn create_post(&mut self, content: String) -> String;
+    fn create_post(&mut self, content: String) -> Result<String, String>;
 
-    async fn connect_user(&mut self, user_id: String);
+    fn connect_user(&mut self, user_id: String) -> Result<(), String>;
 
-    async fn disconnect_user(&mut self, user_id: String);
+    fn disconnect_user(&mut self, user_id: String) -> Result<(), String>;
 }
 
 struct UserAgentImpl {
@@ -79,21 +82,31 @@ impl UserAgent for UserAgentImpl {
         self.state.clone()
     }
 
-    fn set_name(&mut self, name: Option<String>) {
+    fn set_name(&mut self, name: Option<String>) -> Result<(), String> {
         self.with_state(|state| {
             state.name = name;
             state.updated_at = chrono::Utc::now();
+
+            Ok(())
         })
     }
 
-    fn set_email(&mut self, email: Option<String>) {
+    fn set_email(&mut self, email: Option<String>) -> Result<(), String> {
         self.with_state(|state| {
+            let _ = email
+                .clone()
+                .map(|email| {
+                    EmailAddress::from_str(email.as_str())
+                        .map_err(|e| format!("Invalid email: {e}"))
+                })
+                .transpose()?;
             state.email = email;
             state.updated_at = chrono::Utc::now();
+            Ok(())
         })
     }
 
-    async fn connect_user(&mut self, user_id: String) {
+    fn connect_user(&mut self, user_id: String) -> Result<(), String> {
         let state = self.get_state();
 
         if user_id != state.user_id && !state.connected_users.contains_key(&user_id) {
@@ -107,9 +120,10 @@ impl UserAgent for UserAgentImpl {
 
             UserAgentClient::get(user_id.clone()).trigger_connect_user(state.user_id.clone());
         }
+        Ok(())
     }
 
-    async fn disconnect_user(&mut self, user_id: String) {
+    fn disconnect_user(&mut self, user_id: String) -> Result<(), String> {
         let state = self.get_state();
 
         if user_id != state.user_id && state.connected_users.contains_key(&user_id) {
@@ -117,14 +131,19 @@ impl UserAgent for UserAgentImpl {
 
             UserAgentClient::get(user_id.clone()).trigger_disconnect_user(state.user_id.clone());
         }
+        Ok(())
     }
 
-    fn create_post(&mut self, content: String) -> String {
+    fn create_post(&mut self, content: String) -> Result<String, String> {
         let state = self.get_state();
+
         let post_id = uuid::Uuid::new_v4().to_string();
+
         PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
+
         state.posts.push(post_id.clone());
-        post_id
+
+        Ok(post_id)
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {

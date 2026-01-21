@@ -1,9 +1,11 @@
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct Comment {
     pub comment_id: String,
+    pub parent_comment_id: Option<String>,
     pub content: String,
     pub created_by: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -15,20 +17,21 @@ pub struct Post {
     pub post_id: String,
     pub content: String,
     pub created_by: String,
-    pub comments: Vec<Comment>,
+    pub comments: HashMap<String, Comment>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl Post {
-    pub fn new(post_id: String) -> Self {
+    fn new(post_id: String) -> Self {
+        let now = chrono::Utc::now();
         Post {
             post_id,
             content: "".to_string(),
-            comments: Vec::new(),
+            comments: HashMap::new(),
             created_by: "".to_string(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: now,
+            updated_at: now,
         }
     }
 }
@@ -39,9 +42,14 @@ trait PostAgent {
 
     fn get_post(&self) -> Option<Post>;
 
-    fn init_post(&mut self, user_id: String, content: String);
+    fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
 
-    fn add_comment(&mut self, user_id: String, content: String);
+    fn add_comment(
+        &mut self,
+        user_id: String,
+        content: String,
+        parent_comment_id: Option<String>,
+    ) -> Result<String, String>;
 }
 
 struct PostAgentImpl {
@@ -72,24 +80,47 @@ impl PostAgent for PostAgentImpl {
         self.state.clone()
     }
 
-    fn init_post(&mut self, user_id: String, content: String) {
-        self.with_state(|state| {
-            state.created_by = user_id;
-            state.content = content;
-            state.created_at = chrono::Utc::now();
-            state.updated_at = chrono::Utc::now();
-        })
+    fn init_post(&mut self, user_id: String, content: String) -> Result<(), String> {
+        if self.state.is_some() {
+            Err("Post already exists".to_string())
+        } else {
+            self.with_state(|state| {
+                let now = chrono::Utc::now();
+                state.created_by = user_id;
+                state.content = content;
+                state.created_at = now;
+                state.updated_at = now;
+                Ok(())
+            })
+        }
     }
 
-    fn add_comment(&mut self, user_id: String, content: String) {
-        self.with_state(|state| {
-            state.comments.push(Comment {
-                comment_id: uuid::Uuid::new_v4().to_string(),
-                content,
-                created_by: user_id,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            })
+    fn add_comment(
+        &mut self,
+        user_id: String,
+        content: String,
+        parent_comment_id: Option<String>,
+    ) -> Result<String, String> {
+        self.with_state(|state| match parent_comment_id {
+            Some(parent_comment_id) if !state.comments.contains_key(&parent_comment_id) => {
+                Err("Parent comment not found".to_string())
+            }
+            _ => {
+                let comment_id = uuid::Uuid::new_v4().to_string();
+                let now = chrono::Utc::now();
+                state.comments.insert(
+                    comment_id.clone(),
+                    Comment {
+                        comment_id: comment_id.clone(),
+                        parent_comment_id,
+                        content,
+                        created_by: user_id,
+                        created_at: now,
+                        updated_at: now,
+                    },
+                );
+                Ok(comment_id)
+            }
         })
     }
 
