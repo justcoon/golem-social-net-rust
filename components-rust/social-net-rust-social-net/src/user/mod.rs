@@ -1,3 +1,4 @@
+use crate::post::PostAgentClient;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,6 +15,7 @@ pub struct User {
     pub name: Option<String>,
     pub email: Option<String>,
     pub connected_users: HashMap<String, ConnectedUser>,
+    pub posts: Vec<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -25,6 +27,7 @@ impl User {
             name: None,
             email: None,
             connected_users: HashMap::new(),
+            posts: Vec::new(),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -40,6 +43,8 @@ trait UserAgent {
     fn set_name(&mut self, name: Option<String>);
 
     fn set_email(&mut self, email: Option<String>);
+
+    fn create_post(&mut self, content: String) -> String;
 
     async fn connect_user(&mut self, user_id: String);
 
@@ -112,6 +117,14 @@ impl UserAgent for UserAgentImpl {
 
             UserAgentClient::get(user_id.clone()).trigger_disconnect_user(state.user_id.clone());
         }
+    }
+
+    fn create_post(&mut self, content: String) -> String {
+        let state = self.get_state();
+        let post_id = uuid::Uuid::new_v4().to_string();
+        PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
+        state.posts.push(post_id.clone());
+        post_id
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
