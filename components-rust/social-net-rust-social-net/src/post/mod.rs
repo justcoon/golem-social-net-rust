@@ -2,6 +2,8 @@ use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+const MAX_COMMENT_LENGTH: usize = 2000;
+
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct Comment {
     pub comment_id: String,
@@ -10,6 +12,21 @@ pub struct Comment {
     pub created_by: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Comment {
+    fn new(user_id: String, content: String, parent_comment_id: Option<String>) -> Self {
+        let now = chrono::Utc::now();
+        let comment_id = uuid::Uuid::new_v4().to_string();
+        Comment {
+            comment_id,
+            parent_comment_id,
+            content,
+            created_by: user_id,
+            created_at: now,
+            updated_at: now,
+        }
+    }
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
@@ -32,6 +49,27 @@ impl Post {
             created_by: "".to_string(),
             created_at: now,
             updated_at: now,
+        }
+    }
+
+    fn add_comment(
+        &mut self,
+        user_id: String,
+        content: String,
+        parent_comment_id: Option<String>,
+    ) -> Result<String, String> {
+        match parent_comment_id {
+            Some(parent_id) if !self.comments.contains_key(&parent_id) => {
+                Err("Parent comment not found".to_string())
+            }
+            _ => {
+                let comment = Comment::new(user_id.clone(), content, parent_comment_id);
+                let comment_id = comment.comment_id.clone();
+
+                self.comments.insert(comment_id.clone(), comment);
+
+                Ok(comment_id)
+            }
         }
     }
 }
@@ -101,25 +139,11 @@ impl PostAgent for PostAgentImpl {
         content: String,
         parent_comment_id: Option<String>,
     ) -> Result<String, String> {
-        self.with_state(|state| match parent_comment_id {
-            Some(parent_comment_id) if !state.comments.contains_key(&parent_comment_id) => {
-                Err("Parent comment not found".to_string())
-            }
-            _ => {
-                let comment_id = uuid::Uuid::new_v4().to_string();
-                let now = chrono::Utc::now();
-                state.comments.insert(
-                    comment_id.clone(),
-                    Comment {
-                        comment_id: comment_id.clone(),
-                        parent_comment_id,
-                        content,
-                        created_by: user_id,
-                        created_at: now,
-                        updated_at: now,
-                    },
-                );
-                Ok(comment_id)
+        self.with_state(|state| {
+            if state.comments.len() >= MAX_COMMENT_LENGTH {
+                Err("Max comment length".to_string())
+            } else {
+                state.add_comment(user_id.clone(), content, parent_comment_id)
             }
         })
     }

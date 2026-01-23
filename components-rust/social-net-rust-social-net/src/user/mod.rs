@@ -2,13 +2,73 @@ use crate::post::PostAgentClient;
 use email_address::EmailAddress;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+
+#[derive(Schema, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub enum UserConnectionType {
+    Friend,
+    Follower,
+    Following,
+}
+
+impl UserConnectionType {
+    fn get_opposite(&self) -> UserConnectionType {
+        match self {
+            UserConnectionType::Follower => UserConnectionType::Following,
+            UserConnectionType::Following => UserConnectionType::Follower,
+            UserConnectionType::Friend => UserConnectionType::Friend,
+        }
+    }
+}
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ConnectedUser {
     pub user_id: String,
+    pub connection_types: HashSet<UserConnectionType>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl ConnectedUser {
+    fn new(user_id: String, connection_type: UserConnectionType) -> Self {
+        let now = chrono::Utc::now();
+        ConnectedUser {
+            user_id,
+            connection_types: HashSet::from([connection_type]),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn add_connection_type(&mut self, connection_type: UserConnectionType) {
+        self.connection_types.insert(connection_type);
+        self.updated_at = chrono::Utc::now();
+    }
+
+    fn remove_connection_type(&mut self, connection_type: &UserConnectionType) {
+        self.connection_types.remove(&connection_type);
+        self.updated_at = chrono::Utc::now();
+    }
+
+    fn has_connection_type(&self, connection_type: &UserConnectionType) -> bool {
+        self.connection_types.contains(connection_type)
+    }
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct PostRef {
+    pub post_id: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl PostRef {
+    fn new(post_id: String) -> Self {
+        PostRef {
+            post_id,
+            created_at: chrono::Utc::now(),
+        }
+    }
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
@@ -17,7 +77,7 @@ pub struct User {
     pub name: Option<String>,
     pub email: Option<String>,
     pub connected_users: HashMap<String, ConnectedUser>,
-    pub posts: Vec<String>,
+    pub posts: Vec<PostRef>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -49,9 +109,17 @@ trait UserAgent {
 
     fn create_post(&mut self, content: String) -> Result<String, String>;
 
-    fn connect_user(&mut self, user_id: String) -> Result<(), String>;
+    fn connect_user(
+        &mut self,
+        user_id: String,
+        connection_type: UserConnectionType,
+    ) -> Result<(), String>;
 
-    fn disconnect_user(&mut self, user_id: String) -> Result<(), String>;
+    fn disconnect_user(
+        &mut self,
+        user_id: String,
+        connection_type: UserConnectionType,
+    ) -> Result<(), String>;
 }
 
 struct UserAgentImpl {
@@ -106,30 +174,63 @@ impl UserAgent for UserAgentImpl {
         })
     }
 
-    fn connect_user(&mut self, user_id: String) -> Result<(), String> {
+    fn connect_user(
+        &mut self,
+        user_id: String,
+        connection_type: UserConnectionType,
+    ) -> Result<(), String> {
         let state = self.get_state();
 
-        if user_id != state.user_id && !state.connected_users.contains_key(&user_id) {
-            state.connected_users.insert(
-                user_id.clone(),
-                ConnectedUser {
-                    user_id: user_id.clone(),
-                    created_at: chrono::Utc::now(),
-                },
-            );
+        if user_id != state.user_id
+            && state
+                .connected_users
+                .get(&user_id)
+                .is_none_or(|c| !c.has_connection_type(&connection_type))
+        {
+            state
+                .connected_users
+                .entry(user_id.clone())
+                .and_modify(|u| u.add_connection_type(connection_type.clone()))
+                .or_insert(ConnectedUser::new(user_id.clone(), connection_type.clone()));
 
-            UserAgentClient::get(user_id.clone()).trigger_connect_user(state.user_id.clone());
+            let opposite_connection_type = connection_type.get_opposite();
+
+            UserAgentClient::get(user_id.clone())
+                .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
         }
         Ok(())
     }
 
-    fn disconnect_user(&mut self, user_id: String) -> Result<(), String> {
+    fn disconnect_user(
+        &mut self,
+        user_id: String,
+        connection_type: UserConnectionType,
+    ) -> Result<(), String> {
         let state = self.get_state();
 
-        if user_id != state.user_id && state.connected_users.contains_key(&user_id) {
-            state.connected_users.remove(&user_id);
+        if user_id != state.user_id
+            && state
+                .connected_users
+                .get(&user_id)
+                .is_some_and(|c| c.has_connection_type(&connection_type))
+        {
+            if state
+                .connected_users
+                .get(&user_id)
+                .is_some_and(|c| c.connection_types.len() == 1)
+            {
+                state.connected_users.remove(&user_id);
+            } else {
+                state
+                    .connected_users
+                    .entry(user_id.clone())
+                    .and_modify(|u| u.remove_connection_type(&connection_type));
+            }
 
-            UserAgentClient::get(user_id.clone()).trigger_disconnect_user(state.user_id.clone());
+            let opposite_connection_type = connection_type.get_opposite();
+
+            UserAgentClient::get(user_id.clone())
+                .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
         }
         Ok(())
     }
@@ -139,9 +240,11 @@ impl UserAgent for UserAgentImpl {
 
         let post_id = uuid::Uuid::new_v4().to_string();
 
+        let post_ref = PostRef::new(post_id.clone());
+
         PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
 
-        state.posts.push(post_id.clone());
+        state.posts.push(post_ref);
 
         Ok(post_id)
     }
