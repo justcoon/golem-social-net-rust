@@ -123,6 +123,7 @@ impl PostAgent for PostAgentImpl {
             Err("Post already exists".to_string())
         } else {
             self.with_state(|state| {
+                println!("init post - user id: {user_id}, content: {content}");
                 let now = chrono::Utc::now();
                 state.created_by = user_id;
                 state.content = content;
@@ -143,6 +144,12 @@ impl PostAgent for PostAgentImpl {
             Err("Post not exists".to_string())
         } else {
             self.with_state(|state| {
+                println!(
+                    "add comment - user id: {}, content: {}, parent id: {}",
+                    user_id,
+                    content,
+                    parent_comment_id.clone().unwrap_or("N/A".to_string())
+                );
                 if state.comments.len() >= MAX_COMMENT_LENGTH {
                     Err("Max comment length".to_string())
                 } else {

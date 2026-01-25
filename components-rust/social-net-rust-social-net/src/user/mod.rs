@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-#[derive(Schema, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+#[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
 pub enum UserConnectionType {
     Friend,
     Follower,
@@ -152,6 +152,7 @@ impl UserAgent for UserAgentImpl {
 
     fn set_name(&mut self, name: Option<String>) -> Result<(), String> {
         self.with_state(|state| {
+            println!("set name: {}", name.clone().unwrap_or("N/A".to_string()));
             state.name = name;
             state.updated_at = chrono::Utc::now();
 
@@ -161,6 +162,7 @@ impl UserAgent for UserAgentImpl {
 
     fn set_email(&mut self, email: Option<String>) -> Result<(), String> {
         self.with_state(|state| {
+            println!("set email: {}", email.clone().unwrap_or("N/A".to_string()));
             let _ = email
                 .clone()
                 .map(|email| {
@@ -187,6 +189,7 @@ impl UserAgent for UserAgentImpl {
             .get(&user_id)
             .is_none_or(|c| !c.has_connection_type(&connection_type))
         {
+            println!("connect user - id: {user_id}, type: {connection_type:?}");
             state
                 .connected_users
                 .entry(user_id.clone())
@@ -199,6 +202,9 @@ impl UserAgent for UserAgentImpl {
                 .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
             Ok(())
         } else {
+            println!(
+                "connect user - id: {user_id}, type: {connection_type:?} - connection already exists"
+            );
             Ok(())
         }
     }
@@ -209,7 +215,6 @@ impl UserAgent for UserAgentImpl {
         connection_type: UserConnectionType,
     ) -> Result<(), String> {
         let state = self.get_state();
-
         if user_id == state.user_id {
             Err("Self connection not allowed".to_string())
         } else if state
@@ -217,6 +222,7 @@ impl UserAgent for UserAgentImpl {
             .get(&user_id)
             .is_some_and(|c| c.has_connection_type(&connection_type))
         {
+            println!("disconnect user - id: {user_id}, type: {connection_type:?}");
             if state
                 .connected_users
                 .get(&user_id)
@@ -236,6 +242,9 @@ impl UserAgent for UserAgentImpl {
                 .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
             Ok(())
         } else {
+            println!(
+                "disconnect user - id: {user_id}, type: {connection_type:?} - connection not found"
+            );
             Ok(())
         }
     }
@@ -244,6 +253,8 @@ impl UserAgent for UserAgentImpl {
         let state = self.get_state();
 
         let post_id = uuid::Uuid::new_v4().to_string();
+
+        println!("create post - id: {post_id}");
 
         let post_ref = PostRef::new(post_id.clone());
 
