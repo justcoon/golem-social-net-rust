@@ -180,12 +180,12 @@ impl UserAgent for UserAgentImpl {
         connection_type: UserConnectionType,
     ) -> Result<(), String> {
         let state = self.get_state();
-
-        if user_id != state.user_id
-            && state
-                .connected_users
-                .get(&user_id)
-                .is_none_or(|c| !c.has_connection_type(&connection_type))
+        if user_id == state.user_id {
+            Err("Self connection not allowed".to_string())
+        } else if state
+            .connected_users
+            .get(&user_id)
+            .is_none_or(|c| !c.has_connection_type(&connection_type))
         {
             state
                 .connected_users
@@ -197,8 +197,10 @@ impl UserAgent for UserAgentImpl {
 
             UserAgentClient::get(user_id.clone())
                 .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
+            Ok(())
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn disconnect_user(
@@ -208,11 +210,12 @@ impl UserAgent for UserAgentImpl {
     ) -> Result<(), String> {
         let state = self.get_state();
 
-        if user_id != state.user_id
-            && state
-                .connected_users
-                .get(&user_id)
-                .is_some_and(|c| c.has_connection_type(&connection_type))
+        if user_id == state.user_id {
+            Err("Self connection not allowed".to_string())
+        } else if state
+            .connected_users
+            .get(&user_id)
+            .is_some_and(|c| c.has_connection_type(&connection_type))
         {
             if state
                 .connected_users
@@ -231,8 +234,10 @@ impl UserAgent for UserAgentImpl {
 
             UserAgentClient::get(user_id.clone())
                 .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
+            Ok(())
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     fn create_post(&mut self, content: String) -> Result<String, String> {

@@ -31,7 +31,7 @@ httpApi:
               let agent = user-agent(id);
               let name: string = request.body.name;
               let result = agent.set-name(name);
-              match result {  ok(x) => {status: 200u64, body: {message: "name set"}}, err(x) => {status: 400u64, body: err({error: x})} }
+              match result {  ok(_) => {status: 200u64, body: ok({message: "name set"})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: PUT
           path: /v1/social-net/user/{user-id}/email
           binding:
@@ -42,7 +42,7 @@ httpApi:
               let agent = user-agent(id);
               let email: string = request.body.email;
               let result = agent.set-email(email);
-              match result {  ok(x) => {status: 200u64, body: {message: "email set"}}, err(x) => {status: 400u64, body: err({error: x})} }
+              match result {  ok(_) => {status: 200u64, body: ok({message: "email set"})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: POST
           path: /v1/social-net/user/{user-id}/posts
           binding:
@@ -53,7 +53,7 @@ httpApi:
               let agent = user-agent(id);
               let content: string = request.body.content;
               let result = agent.create-post(content);
-              match result {  ok(x) => {status: 200u64, body: {post-id: x}}, err(x) => {status: 400u64, body: err({error: x})} }
+              match result {  ok(x) => {status: 200u64, body: ok({post-id: x})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: PUT
           path: /v1/social-net/user/{user-id}/connections
           binding:
@@ -65,7 +65,7 @@ httpApi:
               let user_id = request.body.user-id;
               let connection_type = request.body.connection-type;
               let result = agent.connect-user(user_id, connection_type);
-              match result {  ok(x) => {status: 200u64, body: {message: "connected"}}, err(x) => {status: 400u64, body: err({error: x})} }
+              match result {  ok(_) => {status: 200u64, body: ok({message: "connected"})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: DELETE
           path: /v1/social-net/user/{user-id}/connections
           binding:
@@ -77,11 +77,11 @@ httpApi:
               let user_id = request.body.user-id;
               let connection_type = request.body.connection-type;
               let result = agent.disconnect-user(user_id, connection_type);
-              match result {  ok(x) => {status: 200u64, body: {message: "disconnected"}}, err(x) => {status: 400u64, body: err({error: x})} }
+              match result {  ok(_) => {status: 200u64, body: ok({message: "disconnected"})}, err(x) => {status: 400u64, body: err({message: x})} }
 
   deployments:
     local:
-      - domain: golem-social-net-rust.localhost:9006
+      - domain: localhost:9006
         definitions:
           - social-net-rust-social-net-api
 

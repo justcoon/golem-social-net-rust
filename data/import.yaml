@@ -8,7 +8,7 @@ plan:
   - name: Create users, index {{ index }}
     request:
       url: /v1/social-net/user/{{ item.user-id }}/name
-      method: POST
+      method: PUT
       body: '{{ item.body }}'
       headers:
         host: '{{ API_HOST }}'
@@ -44,7 +44,7 @@ plan:
   - name: Add user post, index {{ index }}
     request:
       url: /v1/social-net/user/{{ item.user-id }}/posts
-      method: PUT
+      method: POST
       body: '{{ item.body }}'
       headers:
         host: '{{ API_HOST }}'

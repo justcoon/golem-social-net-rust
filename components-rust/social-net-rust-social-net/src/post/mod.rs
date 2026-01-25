@@ -139,13 +139,17 @@ impl PostAgent for PostAgentImpl {
         content: String,
         parent_comment_id: Option<String>,
     ) -> Result<String, String> {
-        self.with_state(|state| {
-            if state.comments.len() >= MAX_COMMENT_LENGTH {
-                Err("Max comment length".to_string())
-            } else {
-                state.add_comment(user_id.clone(), content, parent_comment_id)
-            }
-        })
+        if self.state.is_none() {
+            Err("Post not exists".to_string())
+        } else {
+            self.with_state(|state| {
+                if state.comments.len() >= MAX_COMMENT_LENGTH {
+                    Err("Max comment length".to_string())
+                } else {
+                    state.add_comment(user_id.clone(), content, parent_comment_id)
+                }
+            })
+        }
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
