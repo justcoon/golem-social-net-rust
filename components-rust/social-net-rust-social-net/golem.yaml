@@ -50,10 +50,20 @@ httpApi:
             componentName: social-net-rust:social-net
             response: |
               let id: string = request.path.user-id;
-              let agent = user-agent(id);
+              let agent = user-posts-agent(id);
               let content: string = request.body.content;
               let result = agent.create-post(content);
               match result {  ok(x) => {status: 200u64, body: ok({post-id: x})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: GET
+          path: /v1/social-net/user/{user-id}/posts
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let agent = user-posts-agent(id);
+              let result = agent.get-posts();
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: PUT
           path: /v1/social-net/user/{user-id}/connections
           binding:

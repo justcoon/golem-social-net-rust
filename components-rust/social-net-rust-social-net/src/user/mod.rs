@@ -1,4 +1,3 @@
-use crate::post::PostAgentClient;
 use email_address::EmailAddress;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
@@ -47,7 +46,7 @@ impl ConnectedUser {
     }
 
     fn remove_connection_type(&mut self, connection_type: &UserConnectionType) {
-        self.connection_types.remove(&connection_type);
+        self.connection_types.remove(connection_type);
         self.updated_at = chrono::Utc::now();
     }
 
@@ -57,27 +56,11 @@ impl ConnectedUser {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct PostRef {
-    pub post_id: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-}
-
-impl PostRef {
-    fn new(post_id: String) -> Self {
-        PostRef {
-            post_id,
-            created_at: chrono::Utc::now(),
-        }
-    }
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct User {
     pub user_id: String,
     pub name: Option<String>,
     pub email: Option<String>,
     pub connected_users: HashMap<String, ConnectedUser>,
-    pub posts: Vec<PostRef>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -90,7 +73,6 @@ impl User {
             name: None,
             email: None,
             connected_users: HashMap::new(),
-            posts: Vec::new(),
             created_at: now,
             updated_at: now,
         }
@@ -106,8 +88,6 @@ trait UserAgent {
     fn set_name(&mut self, name: Option<String>) -> Result<(), String>;
 
     fn set_email(&mut self, email: Option<String>) -> Result<(), String>;
-
-    fn create_post(&mut self, content: String) -> Result<String, String>;
 
     fn connect_user(
         &mut self,
@@ -247,22 +227,6 @@ impl UserAgent for UserAgentImpl {
             );
             Ok(())
         }
-    }
-
-    fn create_post(&mut self, content: String) -> Result<String, String> {
-        let state = self.get_state();
-
-        let post_id = uuid::Uuid::new_v4().to_string();
-
-        println!("create post - id: {post_id}");
-
-        let post_ref = PostRef::new(post_id.clone());
-
-        PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
-
-        state.posts.push(post_ref);
-
-        Ok(post_id)
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
