@@ -1,6 +1,8 @@
+use crate::user::{UserAgentClient, UserConnectionType};
+use crate::user_timeline::UserTimelineAgentClient;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const MAX_COMMENT_LENGTH: usize = 2000;
 
@@ -80,7 +82,7 @@ trait PostAgent {
 
     fn get_post(&self) -> Option<Post>;
 
-    fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
+    async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
 
     fn add_comment(
         &mut self,
@@ -118,19 +120,25 @@ impl PostAgent for PostAgentImpl {
         self.state.clone()
     }
 
-    fn init_post(&mut self, user_id: String, content: String) -> Result<(), String> {
+    async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String> {
         if self.state.is_some() {
             Err("Post already exists".to_string())
         } else {
-            self.with_state(|state| {
-                println!("init post - user id: {user_id}, content: {content}");
-                let now = chrono::Utc::now();
-                state.created_by = user_id;
-                state.content = content;
-                state.created_at = now;
-                state.updated_at = now;
-                Ok(())
-            })
+            let state = self.get_state();
+            println!("init post - user id: {user_id}, content: {content}");
+            let now = chrono::Utc::now();
+            state.created_by = user_id.clone();
+            state.content = content;
+            state.created_at = now;
+            state.updated_at = now;
+
+            // let _ = TimelinesUpdaterAgentClient::get()
+            //     .post_created(state.post_id.clone(), user_id.clone())
+            //     .await;
+            TimelinesUpdaterAgentClient::get()
+                .trigger_post_created(state.post_id.clone(), user_id.clone());
+
+            Ok(())
         }
     }
 
@@ -167,5 +175,49 @@ impl PostAgent for PostAgentImpl {
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
         crate::common::snapshot::serialize(&self.state)
+    }
+}
+
+#[agent_definition(mode = "ephemeral")]
+trait TimelinesUpdaterAgent {
+    fn new() -> Self;
+
+    async fn post_created(&mut self, user_id: String, post_id: String);
+}
+
+struct TimelinesUpdaterAgentImpl {}
+
+#[agent_implementation]
+impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
+    fn new() -> Self {
+        Self {}
+    }
+
+    async fn post_created(&mut self, user_id: String, post_id: String) {
+        let user = UserAgentClient::get(user_id.clone()).get_user().await;
+
+        if let Some(user) = user {
+            UserTimelineAgentClient::get(user_id.clone())
+                .trigger_add_post(post_id.clone(), user_id.clone());
+
+            let mut notify_user_ids: HashSet<String> = HashSet::new();
+
+            for (connected_user_id, connection) in user.connected_users {
+                if connection
+                    .connection_types
+                    .contains(&UserConnectionType::Friend)
+                    || connection
+                        .connection_types
+                        .contains(&UserConnectionType::Follower)
+                {
+                    notify_user_ids.insert(connected_user_id);
+                }
+            }
+
+            for connected_user_id in notify_user_ids {
+                UserTimelineAgentClient::get(connected_user_id)
+                    .trigger_add_post(post_id.clone(), user_id.clone());
+            }
+        }
     }
 }
