@@ -64,6 +64,16 @@ httpApi:
               let agent = user-posts-agent(id);
               let result = agent.get-posts();
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: GET
+          path: /v1/social-net/user/{user-id}/timeline/posts
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let agent = user-timeline-view-agent();
+              let result = agent.get-posts-view(id);
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: PUT
           path: /v1/social-net/user/{user-id}/connections
           binding:

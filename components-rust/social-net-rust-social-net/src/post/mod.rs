@@ -132,12 +132,19 @@ impl PostAgent for PostAgentImpl {
             state.created_at = now;
             state.updated_at = now;
 
-            // let _ = TimelinesUpdaterAgentClient::get()
-            //     .post_created(state.post_id.clone(), user_id.clone())
+            // let updated = TimelinesUpdaterAgentClient::get()
+            //     .post_created(user_id.clone(), state.post_id.clone())
             //     .await;
-            TimelinesUpdaterAgentClient::get()
-                .trigger_post_created(state.post_id.clone(), user_id.clone());
+            //
+            // println!("init post - user id: {user_id}, timelines updated: {updated}");
 
+            // TimelinesUpdaterAgentClient::get()
+            //     .trigger_post_created(user_id.clone(), state.post_id.clone());
+
+            TimelinesUpdaterAgentClient::new_phantom()
+                .trigger_post_created(user_id.clone(), state.post_id.clone());
+
+            // execute_post_created_updates(user_id, state.post_id.clone()).await;
             Ok(())
         }
     }
@@ -178,11 +185,12 @@ impl PostAgent for PostAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral")]
+// #[agent_definition(mode = "ephemeral")]
+#[agent_definition]
 trait TimelinesUpdaterAgent {
     fn new() -> Self;
 
-    async fn post_created(&mut self, user_id: String, post_id: String);
+    async fn post_created(&mut self, user_id: String, post_id: String) -> bool;
 }
 
 struct TimelinesUpdaterAgentImpl {}
@@ -193,31 +201,40 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         Self {}
     }
 
-    async fn post_created(&mut self, user_id: String, post_id: String) {
-        let user = UserAgentClient::get(user_id.clone()).get_user().await;
+    async fn post_created(&mut self, user_id: String, post_id: String) -> bool {
+        execute_post_created_updates(user_id, post_id).await
+    }
+}
 
-        if let Some(user) = user {
-            UserTimelineAgentClient::get(user_id.clone())
-                .trigger_add_post(post_id.clone(), user_id.clone());
+async fn execute_post_created_updates(user_id: String, post_id: String) -> bool {
+    let user = UserAgentClient::get(user_id.clone()).get_user().await;
 
-            let mut notify_user_ids: HashSet<String> = HashSet::new();
+    if let Some(user) = user {
+        println!("post created updates - user id: {user_id}, post id: {post_id}");
+        UserTimelineAgentClient::get(user_id.clone())
+            .trigger_add_post(post_id.clone(), user_id.clone());
 
-            for (connected_user_id, connection) in user.connected_users {
-                if connection
+        let mut notify_user_ids: HashSet<String> = HashSet::new();
+
+        for (connected_user_id, connection) in user.connected_users {
+            if connection
+                .connection_types
+                .contains(&UserConnectionType::Friend)
+                || connection
                     .connection_types
-                    .contains(&UserConnectionType::Friend)
-                    || connection
-                        .connection_types
-                        .contains(&UserConnectionType::Follower)
-                {
-                    notify_user_ids.insert(connected_user_id);
-                }
-            }
-
-            for connected_user_id in notify_user_ids {
-                UserTimelineAgentClient::get(connected_user_id)
-                    .trigger_add_post(post_id.clone(), user_id.clone());
+                    .contains(&UserConnectionType::Follower)
+            {
+                notify_user_ids.insert(connected_user_id);
             }
         }
+
+        for connected_user_id in notify_user_ids {
+            UserTimelineAgentClient::get(connected_user_id)
+                .trigger_add_post(post_id.clone(), user_id.clone());
+        }
+        true
+    } else {
+        println!("post created updates - user id: {user_id} - not found");
+        false
     }
 }
