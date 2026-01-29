@@ -1,20 +1,29 @@
+use crate::common::query;
+use crate::common::UserConnectionType;
 use crate::post::{Post, PostAgentClient};
 use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct PostRef {
     pub post_id: String,
     pub created_by: String,
+    pub created_by_connection_type: Option<UserConnectionType>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl PostRef {
-    fn new(post_id: String, created_by: String) -> Self {
+    fn new(
+        post_id: String,
+        created_by: String,
+        created_by_connection_type: Option<UserConnectionType>,
+    ) -> Self {
         PostRef {
             post_id,
             created_by,
+            created_by_connection_type,
             created_at: chrono::Utc::now(),
         }
     }
@@ -33,8 +42,17 @@ impl UserTimeline {
         self.posts.iter().any(|p| p.post_id == post_id)
     }
 
-    fn add_post(&mut self, post_id: String, created_by: String) {
-        self.posts.push(PostRef::new(post_id, created_by));
+    fn add_post(
+        &mut self,
+        post_id: String,
+        created_by: String,
+        created_by_connection_type: Option<UserConnectionType>,
+    ) {
+        self.posts.push(PostRef::new(
+            post_id,
+            created_by,
+            created_by_connection_type,
+        ));
         self.posts
             .sort_by(|a, b| a.created_at.cmp(&b.created_at).reverse());
         self.updated_at = chrono::Utc::now();
@@ -59,7 +77,12 @@ trait UserTimelineAgent {
 
     fn get_posts(&self) -> Option<UserTimeline>;
 
-    fn add_post(&mut self, post_id: String, created_by: String) -> Result<(), String>;
+    fn add_post(
+        &mut self,
+        post_id: String,
+        created_by: String,
+        by_connection_type: Option<UserConnectionType>,
+    ) -> Result<(), String>;
 }
 
 struct UserTimelineAgentImpl {
@@ -91,12 +114,17 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         self.state.clone()
     }
 
-    fn add_post(&mut self, post_id: String, created_by: String) -> Result<(), String> {
+    fn add_post(
+        &mut self,
+        post_id: String,
+        created_by: String,
+        by_connection_type: Option<UserConnectionType>,
+    ) -> Result<(), String> {
         self.with_state(|state| {
             println!("add post - id: {post_id}, created by: {created_by}");
 
             if !state.contains_post(post_id.clone()) {
-                state.add_post(post_id, created_by);
+                state.add_post(post_id, created_by, by_connection_type);
             }
 
             Ok(())
@@ -114,12 +142,103 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
     }
 }
 
+#[derive(Clone, Debug)]
+struct PostQueryMatcher {
+    terms: Vec<String>,
+    field_filters: Vec<(String, String)>,
+}
+
+impl Display for PostQueryMatcher {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PostQueryMatcher(terms: {:?}, field_filters: {:?})",
+            self.terms, self.field_filters
+        )
+    }
+}
+
+impl PostQueryMatcher {
+    fn new(query: &str) -> Self {
+        let q = query::Query::new(query);
+
+        Self {
+            terms: q.terms,
+            field_filters: q.field_filters,
+        }
+    }
+
+    // Check if a post ref matches the query
+    fn matches_post_ref(&self, post_ref: PostRef) -> bool {
+        // Check field filters first
+        for (field, value) in self.field_filters.iter() {
+            let matches = match field.as_str() {
+                "connection-type" | "connectiontype" => {
+                    value == "*"
+                        || post_ref
+                            .created_by_connection_type
+                            .clone()
+                            .is_some_and(|t| {
+                                query::text_exact_matches(
+                                    t.to_string().to_lowercase().as_str(),
+                                    value,
+                                )
+                            })
+                }
+                "created-by" | "createdby" => {
+                    query::text_exact_matches(&post_ref.created_by, value)
+                }
+                "content" => true,
+                _ => false, // Unknown field
+            };
+
+            if !matches {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    // Check if a post matches the query
+    fn matches_post(&self, post: Post) -> bool {
+        // Check field filters first
+        for (field, value) in self.field_filters.iter() {
+            let matches = match field.as_str() {
+                "created-by" | "createdby" => query::text_exact_matches(&post.created_by, value),
+                "content" => query::text_matches(&post.content, value),
+                "connection-type" | "connectiontype" => true,
+                _ => false, // Unknown field
+            };
+
+            if !matches {
+                return false;
+            }
+        }
+
+        // If no terms to match, just check if field filters passed
+        if self.terms.is_empty() {
+            return true;
+        }
+
+        // Check search terms against all searchable fields
+        for term in self.terms.iter() {
+            let matches = query::text_matches(&post.content, term);
+
+            if !matches {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 #[agent_definition(mode = "ephemeral")]
-// #[agent_definition]
 trait UserTimelineViewAgent {
     fn new() -> Self;
 
-    async fn get_posts_view(&mut self, user_id: String) -> Option<Vec<Post>>;
+    async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
 }
 
 struct UserTimelineViewAgentImpl {}
@@ -130,23 +249,44 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
         Self {}
     }
 
-    async fn get_posts_view(&mut self, user_id: String) -> Option<Vec<Post>> {
-        let timeline_posts = UserTimelineAgentClient::get(user_id).get_posts().await;
+    async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
+        let timeline_posts = UserTimelineAgentClient::get(user_id.clone())
+            .get_posts()
+            .await;
+
+        println!("get posts view - user id: {user_id}, query: {query}");
 
         if let Some(timeline_posts) = timeline_posts {
-            let clients = timeline_posts
+            let query_matcher = PostQueryMatcher::new(&query);
+
+            println!("get posts view - user id: {user_id}, query matcher: {query_matcher}");
+
+            let timeline_posts = timeline_posts
                 .posts
-                .iter()
-                .map(|p| PostAgentClient::get(p.post_id.clone()))
+                .into_iter()
+                .filter(|p| query_matcher.matches_post_ref(p.clone()))
                 .collect::<Vec<_>>();
 
-            let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
+            if timeline_posts.is_empty() {
+                Some(vec![])
+            } else {
+                let clients = timeline_posts
+                    .iter()
+                    .map(|p| PostAgentClient::get(p.post_id.clone()))
+                    .collect::<Vec<_>>();
 
-            let responses = join_all(tasks).await;
+                let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
 
-            let result: Vec<Post> = responses.into_iter().flatten().collect();
+                let responses = join_all(tasks).await;
 
-            Some(result)
+                let result: Vec<Post> = responses
+                    .into_iter()
+                    .flatten()
+                    .filter(|p| query_matcher.matches_post(p.clone()))
+                    .collect();
+
+                Some(result)
+            }
         } else {
             None
         }

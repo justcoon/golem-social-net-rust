@@ -1,3 +1,103 @@
+use golem_rust::Schema;
+use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+
+#[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
+pub enum UserConnectionType {
+    Friend,
+    Follower,
+    Following,
+}
+
+impl UserConnectionType {
+    pub fn get_opposite(&self) -> UserConnectionType {
+        match self {
+            UserConnectionType::Follower => UserConnectionType::Following,
+            UserConnectionType::Following => UserConnectionType::Follower,
+            UserConnectionType::Friend => UserConnectionType::Friend,
+        }
+    }
+}
+
+impl Display for UserConnectionType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserConnectionType::Friend => write!(f, "Friend"),
+            UserConnectionType::Follower => write!(f, "Follower"),
+            UserConnectionType::Following => write!(f, "Following"),
+        }
+    }
+}
+
+pub(crate) mod query {
+
+    pub fn text_matches(text: &str, query: &str) -> bool {
+        query == "*" || text.to_lowercase().contains(&query.to_lowercase())
+    }
+
+    pub fn text_exact_matches(text: &str, query: &str) -> bool {
+        query == "*" || text == query
+    }
+
+    // Tokenize the query string, handling quoted strings
+    pub fn tokenize(query: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+
+        for c in query.chars() {
+            match c {
+                ' ' if !in_quotes => {
+                    if !current.is_empty() {
+                        tokens.push(current.trim().to_string());
+                        current.clear();
+                    }
+                }
+                '"' => {
+                    in_quotes = !in_quotes;
+                }
+                _ => {
+                    current.push(c);
+                }
+            }
+        }
+
+        if !current.is_empty() {
+            tokens.push(current.trim().to_string());
+        }
+
+        tokens
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Query {
+        pub terms: Vec<String>,
+        pub field_filters: Vec<(String, String)>,
+    }
+
+    impl Query {
+        pub fn new(query: &str) -> Self {
+            let mut terms = Vec::new();
+            let mut field_filters = Vec::new();
+
+            let tokens = tokenize(query);
+
+            for part in tokens {
+                if let Some((field, value)) = part.split_once(':') {
+                    field_filters.push((field.to_lowercase().to_string(), value.to_string()));
+                } else {
+                    terms.push(part.to_string());
+                }
+            }
+
+            Self {
+                terms,
+                field_filters,
+            }
+        }
+    }
+}
+
 pub(crate) mod snapshot {
     use serde::{de, Serialize};
 

@@ -56,9 +56,9 @@ impl UserPostTimelineAgentImpl {
         self.state.get_or_insert(UserPosts::new(self._id.clone()))
     }
 
-    // fn with_state<T>(&mut self, f: impl FnOnce(&mut UserPosts) -> T) -> T {
-    //     f(self.get_state())
-    // }
+    fn with_state<T>(&mut self, f: impl FnOnce(&mut UserPosts) -> T) -> T {
+        f(self.get_state())
+    }
 }
 
 #[agent_implementation]
@@ -75,19 +75,19 @@ impl UserPostsAgent for UserPostTimelineAgentImpl {
     }
 
     fn create_post(&mut self, content: String) -> Result<String, String> {
-        let state = self.get_state();
+        self.with_state(|state| {
+            let post_id = uuid::Uuid::new_v4().to_string();
 
-        let post_id = uuid::Uuid::new_v4().to_string();
+            println!("create post - id: {post_id}");
 
-        println!("create post - id: {post_id}");
+            let post_ref = PostRef::new(post_id.clone());
 
-        let post_ref = PostRef::new(post_id.clone());
+            PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
 
-        PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
+            state.posts.push(post_ref);
 
-        state.posts.push(post_ref);
-
-        Ok(post_id)
+            Ok(post_id)
+        })
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {

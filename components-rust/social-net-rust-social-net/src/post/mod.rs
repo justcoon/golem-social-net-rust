@@ -1,8 +1,9 @@
-use crate::user::{UserAgentClient, UserConnectionType};
+use crate::common::UserConnectionType;
+use crate::user::UserAgentClient;
 use crate::user_timeline::UserTimelineAgentClient;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 const MAX_COMMENT_LENGTH: usize = 2000;
 
@@ -211,26 +212,34 @@ async fn execute_post_created_updates(user_id: String, post_id: String) -> bool 
 
     if let Some(user) = user {
         println!("post created updates - user id: {user_id}, post id: {post_id}");
-        UserTimelineAgentClient::get(user_id.clone())
-            .trigger_add_post(post_id.clone(), user_id.clone());
+        UserTimelineAgentClient::get(user_id.clone()).trigger_add_post(
+            post_id.clone(),
+            user_id.clone(),
+            None,
+        );
 
-        let mut notify_user_ids: HashSet<String> = HashSet::new();
+        let mut notify_user_ids: HashMap<String, UserConnectionType> = HashMap::new();
 
         for (connected_user_id, connection) in user.connected_users {
             if connection
                 .connection_types
                 .contains(&UserConnectionType::Friend)
-                || connection
-                    .connection_types
-                    .contains(&UserConnectionType::Follower)
             {
-                notify_user_ids.insert(connected_user_id);
+                notify_user_ids.insert(connected_user_id, UserConnectionType::Friend);
+            } else if connection
+                .connection_types
+                .contains(&UserConnectionType::Follower)
+            {
+                notify_user_ids.insert(connected_user_id, UserConnectionType::Follower);
             }
         }
 
-        for connected_user_id in notify_user_ids {
-            UserTimelineAgentClient::get(connected_user_id)
-                .trigger_add_post(post_id.clone(), user_id.clone());
+        for (connected_user_id, connection_type) in notify_user_ids {
+            UserTimelineAgentClient::get(connected_user_id).trigger_add_post(
+                post_id.clone(),
+                user_id.clone(),
+                Some(connection_type),
+            );
         }
         true
     } else {

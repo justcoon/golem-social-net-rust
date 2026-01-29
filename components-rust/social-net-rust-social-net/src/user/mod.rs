@@ -1,25 +1,9 @@
+use crate::common::UserConnectionType;
 use email_address::EmailAddress;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-
-#[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
-pub enum UserConnectionType {
-    Friend,
-    Follower,
-    Following,
-}
-
-impl UserConnectionType {
-    fn get_opposite(&self) -> UserConnectionType {
-        match self {
-            UserConnectionType::Follower => UserConnectionType::Following,
-            UserConnectionType::Following => UserConnectionType::Follower,
-            UserConnectionType::Friend => UserConnectionType::Friend,
-        }
-    }
-}
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ConnectedUser {
@@ -169,7 +153,7 @@ impl UserAgent for UserAgentImpl {
             .get(&user_id)
             .is_none_or(|c| !c.has_connection_type(&connection_type))
         {
-            println!("connect user - id: {user_id}, type: {connection_type:?}");
+            println!("connect user - id: {user_id}, type: {connection_type}");
             state
                 .connected_users
                 .entry(user_id.clone())
@@ -183,7 +167,7 @@ impl UserAgent for UserAgentImpl {
             Ok(())
         } else {
             println!(
-                "connect user - id: {user_id}, type: {connection_type:?} - connection already exists"
+                "connect user - id: {user_id}, type: {connection_type} - connection already exists"
             );
             Ok(())
         }
@@ -202,7 +186,7 @@ impl UserAgent for UserAgentImpl {
             .get(&user_id)
             .is_some_and(|c| c.has_connection_type(&connection_type))
         {
-            println!("disconnect user - id: {user_id}, type: {connection_type:?}");
+            println!("disconnect user - id: {user_id}, type: {connection_type}");
             if state
                 .connected_users
                 .get(&user_id)
@@ -223,7 +207,7 @@ impl UserAgent for UserAgentImpl {
             Ok(())
         } else {
             println!(
-                "disconnect user - id: {user_id}, type: {connection_type:?} - connection not found"
+                "disconnect user - id: {user_id}, type: {connection_type} - connection not found"
             );
             Ok(())
         }
