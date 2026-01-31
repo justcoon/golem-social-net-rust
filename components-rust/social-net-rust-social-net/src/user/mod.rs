@@ -270,7 +270,7 @@ impl UserQueryMatcher {
 
         // Check search terms against all searchable fields
         for term in self.terms.iter() {
-            let matches = query::text_exact_matches(&user.user_id, term)
+            let matches = query::text_matches(&user.user_id, term)
                 || query::opt_text_matches(user.name.clone(), term)
                 || query::opt_text_matches(user.email.clone(), term);
 
