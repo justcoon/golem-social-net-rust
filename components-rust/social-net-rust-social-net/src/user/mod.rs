@@ -1,6 +1,13 @@
-use crate::common::UserConnectionType;
+use crate::common::{query, UserConnectionType};
 use email_address::EmailAddress;
+use futures::future::join_all;
+use golem_rust::bindings::golem::api::host::{
+    resolve_component_id, AgentAllFilter, AgentAnyFilter, AgentNameFilter, AgentPropertyFilter,
+    GetAgents, StringFilterComparator,
+};
+use golem_rust::golem_wasm::ComponentId;
 use golem_rust::{agent_definition, agent_implementation, Schema};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -221,5 +228,148 @@ impl UserAgent for UserAgentImpl {
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
         crate::common::snapshot::serialize(&self.state)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct UserQueryMatcher {
+    terms: Vec<String>,
+    field_filters: Vec<(String, String)>,
+}
+
+impl UserQueryMatcher {
+    fn new(query: &str) -> Self {
+        let q = query::Query::new(query);
+
+        Self {
+            terms: q.terms,
+            field_filters: q.field_filters,
+        }
+    }
+
+    // Check if a user matches the query
+    fn matches(&self, user: User) -> bool {
+        // Check field filters first
+        for (field, value) in self.field_filters.iter() {
+            let matches = match field.to_lowercase().as_str() {
+                "user-id" | "userid" => query::text_exact_matches(&user.user_id, value),
+                "name" => query::opt_text_matches(user.name.clone(), value),
+                "email" => query::opt_text_exact_matches(user.email.clone(), value),
+                _ => false, // Unknown field
+            };
+
+            if !matches {
+                return false;
+            }
+        }
+
+        // If no terms to match, just check if field filters passed
+        if self.terms.is_empty() {
+            return true;
+        }
+
+        // Check search terms against all searchable fields
+        for term in self.terms.iter() {
+            let matches = query::text_exact_matches(&user.user_id, term)
+                || query::opt_text_matches(user.name.clone(), term)
+                || query::opt_text_matches(user.email.clone(), term);
+
+            if !matches {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+fn get_agent_filter() -> AgentAnyFilter {
+    AgentAnyFilter {
+        filters: vec![AgentAllFilter {
+            filters: vec![AgentPropertyFilter::Name(AgentNameFilter {
+                comparator: StringFilterComparator::StartsWith,
+                value: "user-agent(".to_string(),
+            })],
+        }],
+    }
+}
+
+fn get_user_agent_id(agent_name: &str) -> Option<String> {
+    Regex::new(r#"user-agent\("([^)]+)"\)"#)
+        .ok()?
+        .captures(agent_name)
+        .filter(|caps| caps.len() > 0)
+        .map(|caps| caps[1].to_string())
+}
+
+async fn get_users(
+    agent_ids: HashSet<String>,
+    matcher: UserQueryMatcher,
+) -> Result<Vec<User>, String> {
+    let clients: Vec<UserAgentClient> = agent_ids
+        .into_iter()
+        .map(|agent_id| UserAgentClient::get(agent_id.to_string()))
+        .collect();
+
+    let tasks: Vec<_> = clients.iter().map(|client| client.get_user()).collect();
+
+    let responses = join_all(tasks).await;
+
+    let result: Vec<User> = responses
+        .into_iter()
+        .flatten()
+        .filter(|p| matcher.matches(p.clone()))
+        .collect();
+
+    Ok(result)
+}
+
+#[agent_definition(mode = "ephemeral")]
+trait UserSearchAgent {
+    fn new() -> Self;
+
+    async fn search(&self, query: String) -> Result<Vec<User>, String>;
+}
+
+struct UserSearchAgentImpl {
+    component_id: Option<ComponentId>,
+}
+
+#[agent_implementation]
+impl UserSearchAgent for UserSearchAgentImpl {
+    fn new() -> Self {
+        let component_id = resolve_component_id("social-net-rust:social-net");
+        UserSearchAgentImpl { component_id }
+    }
+
+    async fn search(&self, query: String) -> Result<Vec<User>, String> {
+        if let Some(component_id) = self.component_id {
+            println!("searching for users - query: {}", query);
+
+            let mut values: Vec<User> = Vec::new();
+            let matcher = UserQueryMatcher::new(&query);
+
+            let filter = get_agent_filter();
+
+            let get_agents = GetAgents::new(component_id, Some(&filter), false);
+
+            let mut processed_agent_ids: HashSet<String> = HashSet::new();
+
+            while let Some(agents) = get_agents.get_next() {
+                let agent_ids = agents
+                    .iter()
+                    .filter_map(|a| get_user_agent_id(a.agent_id.agent_id.as_str()))
+                    .filter(|n| !processed_agent_ids.contains(n))
+                    .collect::<HashSet<_>>();
+
+                let users = get_users(agent_ids.clone(), matcher.clone()).await?;
+                processed_agent_ids.extend(agent_ids);
+                values.extend(users);
+            }
+
+            Ok(values)
+        } else {
+            Err("Component not found".to_string())
+        }
     }
 }

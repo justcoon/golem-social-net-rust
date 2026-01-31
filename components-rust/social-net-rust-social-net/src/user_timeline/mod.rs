@@ -173,18 +173,13 @@ impl PostQueryMatcher {
         // Check field filters first
         for (field, value) in self.field_filters.iter() {
             let matches = match field.as_str() {
-                "connection-type" | "connectiontype" => {
-                    value == "*"
-                        || post_ref
-                            .created_by_connection_type
-                            .clone()
-                            .is_some_and(|t| {
-                                query::text_exact_matches(
-                                    t.to_string().to_lowercase().as_str(),
-                                    value,
-                                )
-                            })
-                }
+                "connection-type" | "connectiontype" => query::opt_text_exact_matches(
+                    post_ref
+                        .created_by_connection_type
+                        .clone()
+                        .map(|t| t.to_string()),
+                    value,
+                ),
                 "created-by" | "createdby" => {
                     query::text_exact_matches(&post_ref.created_by, value)
                 }

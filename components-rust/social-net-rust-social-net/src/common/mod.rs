@@ -31,6 +31,14 @@ impl Display for UserConnectionType {
 
 pub(crate) mod query {
 
+    pub fn opt_text_matches(text: Option<String>, query: &str) -> bool {
+        query == "*" || text.is_some_and(|text| text.to_lowercase().contains(&query.to_lowercase()))
+    }
+
+    pub fn opt_text_exact_matches(text: Option<String>, query: &str) -> bool {
+        query == "*" || text.is_some_and(|text| text == query)
+    }
+
     pub fn text_matches(text: &str, query: &str) -> bool {
         query == "*" || text.to_lowercase().contains(&query.to_lowercase())
     }
