@@ -325,6 +325,7 @@ trait UserTimelineUpdatesAgent {
         &mut self,
         user_id: String,
         since: Option<chrono::DateTime<chrono::Utc>>,
+        max_time: Option<u8>,
     ) -> Option<Vec<PostRef>>;
 }
 
@@ -340,22 +341,41 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
         &mut self,
         user_id: String,
         since: Option<chrono::DateTime<chrono::Utc>>,
+        max_time: Option<u8>,
     ) -> Option<Vec<PostRef>> {
         let since = since.unwrap_or(chrono::Utc::now());
-        let total_wait_time = time::Duration::from_secs(6);
+        let total_wait_time = time::Duration::from_secs(max_time.unwrap_or(10) as u64);
         let iter_wait_time = time::Duration::from_secs(1);
         let now = time::Instant::now();
+        let mut done = false;
+        let mut result: Option<Vec<PostRef>> = None;
 
-        while now.elapsed() >= total_wait_time {
+        while !done {
+            println!(
+                "get posts updates - user id: {}, since: {}, elapsed time: {}ms, total time: {}ms",
+                user_id,
+                since,
+                now.elapsed().as_millis(),
+                total_wait_time.as_millis()
+            );
             let res = UserTimelineAgentClient::get(user_id.clone())
                 .get_updates(since)
                 .await;
 
-            match res {
-                Some(updates) if updates.posts.len() > 0 => return Some(updates.posts),
-                _ => thread::sleep(iter_wait_time),
+            if let Some(updates) = res {
+                if !updates.posts.is_empty() {
+                    result = Some(updates.posts);
+                    done = true;
+                } else {
+                    result = Some(vec![]);
+                    thread::sleep(iter_wait_time);
+                    done = now.elapsed() >= total_wait_time;
+                }
+            } else {
+                result = None;
+                done = true;
             }
         }
-        None
+        result
     }
 }

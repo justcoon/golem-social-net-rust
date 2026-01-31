@@ -39,14 +39,11 @@ pub enum LikeType {
 
 impl LikeType {
     pub fn is_positive(&self) -> bool {
-        match self {
-            LikeType::Dislike => false,
-            _ => true,
-        }
+        !self.is_negative()
     }
 
     pub fn is_negative(&self) -> bool {
-        !self.is_positive()
+        matches!(self, LikeType::Dislike)
     }
 }
 

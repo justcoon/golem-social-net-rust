@@ -94,7 +94,7 @@ httpApi:
               let id: string = request.path.user-id;
               let since: string = request.query.since;
               let agent = user-timeline-updates-agent();
-              let result = agent.get-posts-updates(id, some({timestamp: since}));
+              let result = agent.get-posts-updates(id, some({timestamp: since}), none);
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: PUT
           path: /v1/social-net/users/{user-id}/connections
