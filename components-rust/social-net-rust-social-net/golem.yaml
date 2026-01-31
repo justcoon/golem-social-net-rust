@@ -12,7 +12,7 @@ httpApi:
       version: '0.0.1'
       routes:
         - method: GET
-          path: /v1/social-net/user/search?{query}
+          path: /v1/social-net/users/search?{query}
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -22,7 +22,7 @@ httpApi:
               let result = agent.search(query);
               match result {  ok(x) => {status: 200u64, body: ok(x)}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: GET
-          path: /v1/social-net/user/{user-id}
+          path: /v1/social-net/users/{user-id}
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -32,7 +32,7 @@ httpApi:
               let result = agent.get-user();
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: PUT
-          path: /v1/social-net/user/{user-id}/name
+          path: /v1/social-net/users/{user-id}/name
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -43,7 +43,7 @@ httpApi:
               let result = agent.set-name(name);
               match result {  ok(_) => {status: 200u64, body: ok({message: "name set"})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: PUT
-          path: /v1/social-net/user/{user-id}/email
+          path: /v1/social-net/users/{user-id}/email
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -54,7 +54,7 @@ httpApi:
               let result = agent.set-email(email);
               match result {  ok(_) => {status: 200u64, body: ok({message: "email set"})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: POST
-          path: /v1/social-net/user/{user-id}/posts
+          path: /v1/social-net/users/{user-id}/posts
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -65,7 +65,7 @@ httpApi:
               let result = agent.create-post(content);
               match result {  ok(x) => {status: 200u64, body: ok({post-id: x})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: GET
-          path: /v1/social-net/user/{user-id}/posts
+          path: /v1/social-net/users/{user-id}/posts
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -75,7 +75,7 @@ httpApi:
               let result = agent.get-posts();
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: GET
-          path: /v1/social-net/user/{user-id}/timeline/posts?{query}
+          path: /v1/social-net/users/{user-id}/timeline/posts?{query}
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -85,8 +85,19 @@ httpApi:
               let agent = user-timeline-view-agent();
               let result = agent.get-posts-view(id, query);
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: GET
+          path: /v1/social-net/users/{user-id}/timeline/posts/updates?{since}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let since: string = request.query.since;
+              let agent = user-timeline-updates-agent();
+              let result = agent.get-posts-updates(id, some({timestamp: since}));
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: PUT
-          path: /v1/social-net/user/{user-id}/connections
+          path: /v1/social-net/users/{user-id}/connections
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -98,7 +109,7 @@ httpApi:
               let result = agent.connect-user(user_id, connection_type);
               match result {  ok(_) => {status: 200u64, body: ok({message: "connected"})}, err(x) => {status: 400u64, body: err({message: x})} }
         - method: DELETE
-          path: /v1/social-net/user/{user-id}/connections
+          path: /v1/social-net/users/{user-id}/connections
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -109,6 +120,88 @@ httpApi:
               let connection_type = request.body.connection-type;
               let result = agent.disconnect-user(user_id, connection_type);
               match result {  ok(_) => {status: 200u64, body: ok({message: "disconnected"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: GET
+          path: /v1/social-net/posts/{post-id}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let agent = post-agent(id);
+              let result = agent.get-post();
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: PUT
+          path: /v1/social-net/posts/{post-id}/likes
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let user_id: string = request.body.user-id;
+              let like_type = request.body.like-type;
+              let agent = post-agent(id);
+              let result = agent.set-like(user_id, like_type);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "set"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: DELETE
+          path: /v1/social-net/posts/{post-id}/likes/{user-id}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let user_id: string = request.path.user-id;
+              let agent = post-agent(id);
+              let result = agent.remove-like(user_id);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "removed"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: POST
+          path: /v1/social-net/posts/{post-id}/comments
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let comment: string = request.body.content;
+              let user_id: string = request.body.user-id;
+              let parent_comment_id = request.body.parent-comment-id;
+              let agent = post-agent(id);
+              let result = agent.add-comment(user_id, comment, parent_comment_id);
+              match result {  ok(x) => {status: 200u64, body: ok(x)}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: DELETE
+          path: /v1/social-net/posts/{post-id}/comments/{comment-id}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let comment_id: string = request.path.comment-id;
+              let agent = post-agent(id);
+              let result = agent.remove-comment(comment_id);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "removed"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: PUT
+          path: /v1/social-net/posts/{post-id}/comments/{comment-id}/likes
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let comment_id: string = request.path.comment-id;
+              let user_id: string = request.body.user-id;
+              let like_type = request.body.like-type;
+              let agent = post-agent(id);
+              let result = agent.set-comment-like(comment_id, user_id, like_type);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "set"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: DELETE
+          path: /v1/social-net/posts/{post-id}/comments/{comment-id}/likes/{user-id}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.post-id;
+              let comment_id: string = request.path.comment-id;
+              let user_id: string = request.path.user-id;
+              let agent = post-agent(id);
+              let result = agent.remove-comment-like(comment_id, user_id);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "removed"})}, err(x) => {status: 400u64, body: err({message: x})} }
 
   deployments:
     local:

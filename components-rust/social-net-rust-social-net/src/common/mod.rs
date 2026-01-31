@@ -29,6 +29,38 @@ impl Display for UserConnectionType {
     }
 }
 
+#[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
+pub enum LikeType {
+    Like,
+    Insightful,
+    Love,
+    Dislike,
+}
+
+impl LikeType {
+    pub fn is_positive(&self) -> bool {
+        match self {
+            LikeType::Dislike => false,
+            _ => true,
+        }
+    }
+
+    pub fn is_negative(&self) -> bool {
+        !self.is_positive()
+    }
+}
+
+impl Display for LikeType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LikeType::Like => write!(f, "Like"),
+            LikeType::Insightful => write!(f, "Insightful"),
+            LikeType::Love => write!(f, "Love"),
+            LikeType::Dislike => write!(f, "Dislike"),
+        }
+    }
+}
+
 pub(crate) mod query {
 
     pub fn opt_text_matches(text: Option<String>, query: &str) -> bool {

@@ -5,6 +5,7 @@ use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use std::{thread, time};
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct PostRef {
@@ -71,11 +72,17 @@ impl UserTimeline {
     }
 }
 
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct UserTimelineUpdates {
+    pub user_id: String,
+    pub posts: Vec<PostRef>,
+}
+
 #[agent_definition]
 trait UserTimelineAgent {
     fn new(id: String) -> Self;
 
-    fn get_posts(&self) -> Option<UserTimeline>;
+    fn get_timeline(&self) -> Option<UserTimeline>;
 
     fn add_post(
         &mut self,
@@ -83,6 +90,8 @@ trait UserTimelineAgent {
         created_by: String,
         by_connection_type: Option<UserConnectionType>,
     ) -> Result<(), String>;
+
+    fn get_updates(&self, since: chrono::DateTime<chrono::Utc>) -> Option<UserTimelineUpdates>;
 }
 
 struct UserTimelineAgentImpl {
@@ -110,8 +119,28 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         }
     }
 
-    fn get_posts(&self) -> Option<UserTimeline> {
+    fn get_timeline(&self) -> Option<UserTimeline> {
         self.state.clone()
+    }
+
+    fn get_updates(&self, since: chrono::DateTime<chrono::Utc>) -> Option<UserTimelineUpdates> {
+        if let Some(state) = &self.state {
+            println!("get updates - since: {since}");
+
+            let updates = state
+                .posts
+                .iter()
+                .filter(|p| p.created_at > since)
+                .cloned()
+                .collect();
+
+            Some(UserTimelineUpdates {
+                user_id: state.user_id.clone(),
+                posts: updates,
+            })
+        } else {
+            None
+        }
     }
 
     fn add_post(
@@ -246,7 +275,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
 
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
         let timeline_posts = UserTimelineAgentClient::get(user_id.clone())
-            .get_posts()
+            .get_timeline()
             .await;
 
         println!("get posts view - user id: {user_id}, query: {query}");
@@ -285,5 +314,48 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
         } else {
             None
         }
+    }
+}
+
+#[agent_definition(mode = "ephemeral")]
+trait UserTimelineUpdatesAgent {
+    fn new() -> Self;
+
+    async fn get_posts_updates(
+        &mut self,
+        user_id: String,
+        since: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Option<Vec<PostRef>>;
+}
+
+struct UserTimelineUpdatesAgentImpl {}
+
+#[agent_implementation]
+impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
+    fn new() -> Self {
+        Self {}
+    }
+
+    async fn get_posts_updates(
+        &mut self,
+        user_id: String,
+        since: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Option<Vec<PostRef>> {
+        let since = since.unwrap_or(chrono::Utc::now());
+        let total_wait_time = time::Duration::from_secs(6);
+        let iter_wait_time = time::Duration::from_secs(1);
+        let now = time::Instant::now();
+
+        while now.elapsed() >= total_wait_time {
+            let res = UserTimelineAgentClient::get(user_id.clone())
+                .get_updates(since)
+                .await;
+
+            match res {
+                Some(updates) if updates.posts.len() > 0 => return Some(updates.posts),
+                _ => thread::sleep(iter_wait_time),
+            }
+        }
+        None
     }
 }

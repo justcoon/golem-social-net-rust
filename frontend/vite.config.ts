@@ -15,7 +15,7 @@ export default defineConfig({
         target: "http://localhost:9006",
         changeOrigin: true,
         // headers: {
-        //   Host: "golem-shopping.test.local",
+        //   Host: "golem-social-net.test.local",
         // },
         rewrite: (path) => path.replace(/^\/api/, ""),
       },

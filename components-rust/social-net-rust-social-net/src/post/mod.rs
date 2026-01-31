@@ -1,4 +1,4 @@
-use crate::common::UserConnectionType;
+use crate::common::{LikeType, UserConnectionType};
 use crate::user::UserAgentClient;
 use crate::user_timeline::UserTimelineAgentClient;
 use golem_rust::{agent_definition, agent_implementation, Schema};
@@ -12,6 +12,7 @@ pub struct Comment {
     pub comment_id: String,
     pub parent_comment_id: Option<String>,
     pub content: String,
+    pub likes: HashMap<String, LikeType>,
     pub created_by: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -25,6 +26,7 @@ impl Comment {
             comment_id,
             parent_comment_id,
             content,
+            likes: HashMap::new(),
             created_by: user_id,
             created_at: now,
             updated_at: now,
@@ -37,6 +39,7 @@ pub struct Post {
     pub post_id: String,
     pub content: String,
     pub created_by: String,
+    pub likes: HashMap<String, LikeType>,
     pub comments: HashMap<String, Comment>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -50,6 +53,7 @@ impl Post {
             content: "".to_string(),
             comments: HashMap::new(),
             created_by: "".to_string(),
+            likes: HashMap::new(),
             created_at: now,
             updated_at: now,
         }
@@ -71,8 +75,36 @@ impl Post {
 
                 self.comments.insert(comment_id.clone(), comment);
 
+                self.updated_at = chrono::Utc::now();
+
                 Ok(comment_id)
             }
+        }
+    }
+
+    fn remove_comment(&mut self, comment_id: String) -> Result<(), String> {
+        if !self.comments.contains_key(&comment_id) {
+            Err("Comment not found".to_string())
+        } else {
+            let remove_ids = self
+                .comments
+                .values()
+                .filter(|c| {
+                    c.parent_comment_id
+                        .clone()
+                        .is_some_and(|id| id == comment_id)
+                })
+                .map(|c| c.comment_id.clone())
+                .collect::<Vec<_>>();
+
+            for remove_id in remove_ids {
+                self.comments.remove(&remove_id);
+            }
+            self.comments.remove(&comment_id);
+
+            self.updated_at = chrono::Utc::now();
+
+            Ok(())
         }
     }
 }
@@ -91,6 +123,21 @@ trait PostAgent {
         content: String,
         parent_comment_id: Option<String>,
     ) -> Result<String, String>;
+
+    fn remove_comment(&mut self, comment_id: String) -> Result<(), String>;
+
+    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String>;
+
+    fn remove_like(&mut self, user_id: String) -> Result<(), String>;
+
+    fn set_comment_like(
+        &mut self,
+        comment_id: String,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<(), String>;
+
+    fn remove_comment_like(&mut self, comment_id: String, user_id: String) -> Result<(), String>;
 }
 
 struct PostAgentImpl {
@@ -170,6 +217,91 @@ impl PostAgent for PostAgentImpl {
                     Err("Max comment length".to_string())
                 } else {
                     state.add_comment(user_id.clone(), content, parent_comment_id)
+                }
+            })
+        }
+    }
+
+    fn remove_comment(&mut self, comment_id: String) -> Result<(), String> {
+        if self.state.is_none() {
+            Err("Post not exists".to_string())
+        } else {
+            self.with_state(|state| {
+                println!("remove comment - comment id: {}", comment_id);
+                state.remove_comment(comment_id)
+            })
+        }
+    }
+
+    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String> {
+        if self.state.is_none() {
+            Err("Post not exists".to_string())
+        } else {
+            self.with_state(|state| {
+                println!("set like - user id: {}, like type: {}", user_id, like_type);
+                state.likes.insert(user_id, like_type);
+                state.updated_at = chrono::Utc::now();
+                Ok(())
+            })
+        }
+    }
+
+    fn remove_like(&mut self, user_id: String) -> Result<(), String> {
+        if self.state.is_none() {
+            Err("Post not exists".to_string())
+        } else {
+            self.with_state(|state| {
+                println!("remove like - user id: {}", user_id);
+                state.likes.remove(&user_id);
+                state.updated_at = chrono::Utc::now();
+                Ok(())
+            })
+        }
+    }
+
+    fn set_comment_like(
+        &mut self,
+        comment_id: String,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<(), String> {
+        if self.state.is_none() {
+            Err("Post not exists".to_string())
+        } else {
+            self.with_state(|state| {
+                println!(
+                    "set comment like - comment id: {}, user id: {}, like type: {}",
+                    comment_id, user_id, like_type
+                );
+
+                match state.comments.get_mut(&comment_id) {
+                    Some(comment) => {
+                        comment.likes.insert(user_id, like_type);
+                        comment.updated_at = chrono::Utc::now();
+                        Ok(())
+                    }
+                    None => Err("Comment not found".to_string()),
+                }
+            })
+        }
+    }
+
+    fn remove_comment_like(&mut self, comment_id: String, user_id: String) -> Result<(), String> {
+        if self.state.is_none() {
+            Err("Post not exists".to_string())
+        } else {
+            self.with_state(|state| {
+                println!(
+                    "remove comment like - comment id: {}, user id: {}",
+                    comment_id, user_id
+                );
+                match state.comments.get_mut(&comment_id) {
+                    Some(comment) => {
+                        comment.likes.remove(&user_id);
+                        comment.updated_at = chrono::Utc::now();
+                        Ok(())
+                    }
+                    None => Err("Comment not found".to_string()),
                 }
             })
         }

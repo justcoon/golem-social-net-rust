@@ -7,7 +7,7 @@ rampup: 1
 plan:
   - name: Create users, index {{ index }}
     request:
-      url: /v1/social-net/user/{{ item.user-id }}/name
+      url: /v1/social-net/users/{{ item.user-id }}/name
       method: PUT
       body: '{{ item.body }}'
       headers:
@@ -19,7 +19,7 @@ plan:
       quote_char: "\'"
   - name: Add user friends, index {{ index }}
     request:
-      url: /v1/social-net/user/{{ item.user-id }}/connections
+      url: /v1/social-net/users/{{ item.user-id }}/connections
       method: PUT
       body: '{{ item.body }}'
       headers:
@@ -31,7 +31,7 @@ plan:
       quote_char: "\'"
   - name: Add user followings, index {{ index }}
     request:
-      url: /v1/social-net/user/{{ item.user-id }}/connections
+      url: /v1/social-net/users/{{ item.user-id }}/connections
       method: PUT
       body: '{{ item.body }}'
       headers:
@@ -43,7 +43,7 @@ plan:
       quote_char: "\'"
   - name: Add user post, index {{ index }}
     request:
-      url: /v1/social-net/user/{{ item.user-id }}/posts
+      url: /v1/social-net/users/{{ item.user-id }}/posts
       method: POST
       body: '{{ item.body }}'
       headers:

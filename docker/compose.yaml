@@ -73,8 +73,7 @@ services:
       GOLEM__COMPILATION__CONFIG__HOST: golem-component-compilation-service
       GOLEM__COMPILATION__CONFIG__PORT: ${COMPONENT_COMPILATION_SERVICE_GRPC_PORT}
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
 
   golem-shard-manager:
     image: golemservices/golem-shard-manager:${GOLEM_IMAGES_VERSION}

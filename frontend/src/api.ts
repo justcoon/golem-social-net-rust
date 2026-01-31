@@ -28,11 +28,22 @@ export interface User {
     'connected-users'?: ConnectedUserTuple[];
 }
 
+export interface Comment {
+    'comment-id': string;
+    'parent-comment-id'?: string;
+    content: string;
+    'created-by': string;
+    'created-at': { timestamp: string } | string;
+}
+// Comments is a list of tuples: [commentId, Comment]
+export type CommentTuple = [string, ConnectedUser];
+
 export interface Post {
     'post-id': string;
     content: string;
     'created-by': string;
     'created-at': { timestamp: string } | string;
+    comments?: CommentTuple[];
 }
 
 export interface ConnectionRequest {
@@ -47,24 +58,27 @@ export const convertToKebabCase = (obj: any) => {
 }
 
 export const api = {
-    getUser: (userId: string) => apiClient.get(`/user/${userId}`),
-    updateName: (userId: string, name: string) => apiClient.put(`/user/${userId}/name`, { name }),
-    updateEmail: (userId: string, email: string) => apiClient.put(`/user/${userId}/email`, { email }),
+    getUser: (userId: string) => apiClient.get(`/users/${userId}`),
+    updateName: (userId: string, name: string) => apiClient.put(`/users/${userId}/name`, { name }),
+    updateEmail: (userId: string, email: string) => apiClient.put(`/users/${userId}/email`, { email }),
 
-    createPost: (userId: string, content: string) => apiClient.post(`/user/${userId}/posts`, { content }),
-    getPosts: (userId: string) => apiClient.get(`/user/${userId}/posts`),
+    createPost: (userId: string, content: string) => apiClient.post(`/users/${userId}/posts`, { content }),
+    getPosts: (userId: string) => apiClient.get(`/users/${userId}/posts`),
 
-    getTimeline: (userId: string, query: string = '') => apiClient.get(`/user/${userId}/timeline/posts`, { params: { query } }),
+    getTimeline: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/timeline/posts`, { params: { query } }),
 
-    searchUsers: (query: string) => apiClient.get(`/user/search`, { params: { query } }),
+    searchUsers: (query: string) => apiClient.get(`/users/search`, { params: { query } }),
 
     connectUser: (userId: string, targetUserId: string, type: 'friend' | 'following' = 'following') =>
-        apiClient.put(`/user/${userId}/connections`, { 'user-id': targetUserId, 'connection-type': type }),
+        apiClient.put(`/users/${userId}/connections`, { 'user-id': targetUserId, 'connection-type': type }),
 
     disconnectUser: (userId: string, targetUserId: string, type: 'friend' | 'following' = 'following') =>
         apiClient.request({
             method: 'DELETE',
-            url: `/user/${userId}/connections`,
+            url: `/users/${userId}/connections`,
             data: { 'user-id': targetUserId, 'connection-type': type }
         }),
+
+    addComment: (postId: string, userId: string, content: string, parentCommentId?: string) =>
+        apiClient.post(`/posts/${postId}/comments`, { 'user-id': userId, content, 'parent-comment-id': parentCommentId }),
 };
