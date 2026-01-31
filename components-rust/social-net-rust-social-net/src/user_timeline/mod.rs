@@ -91,7 +91,10 @@ trait UserTimelineAgent {
         by_connection_type: Option<UserConnectionType>,
     ) -> Result<(), String>;
 
-    fn get_updates(&self, since: chrono::DateTime<chrono::Utc>) -> Option<UserTimelineUpdates>;
+    fn get_updates(
+        &self,
+        updates_since: chrono::DateTime<chrono::Utc>,
+    ) -> Option<UserTimelineUpdates>;
 }
 
 struct UserTimelineAgentImpl {
@@ -123,14 +126,17 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         self.state.clone()
     }
 
-    fn get_updates(&self, since: chrono::DateTime<chrono::Utc>) -> Option<UserTimelineUpdates> {
+    fn get_updates(
+        &self,
+        updates_since: chrono::DateTime<chrono::Utc>,
+    ) -> Option<UserTimelineUpdates> {
         if let Some(state) = &self.state {
-            println!("get updates - since: {since}");
+            println!("get updates - updates since: {updates_since}");
 
             let updates = state
                 .posts
                 .iter()
-                .filter(|p| p.created_at > since)
+                .filter(|p| p.created_at >= updates_since)
                 .cloned()
                 .collect();
 
@@ -324,8 +330,8 @@ trait UserTimelineUpdatesAgent {
     async fn get_posts_updates(
         &mut self,
         user_id: String,
-        since: Option<chrono::DateTime<chrono::Utc>>,
-        max_time: Option<u8>,
+        updates_since: Option<chrono::DateTime<chrono::Utc>>,
+        max_wait_time: Option<u8>,
     ) -> Option<Vec<PostRef>>;
 }
 
@@ -340,11 +346,11 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
     async fn get_posts_updates(
         &mut self,
         user_id: String,
-        since: Option<chrono::DateTime<chrono::Utc>>,
-        max_time: Option<u8>,
+        updates_since: Option<chrono::DateTime<chrono::Utc>>,
+        max_wait_time: Option<u8>,
     ) -> Option<Vec<PostRef>> {
-        let since = since.unwrap_or(chrono::Utc::now());
-        let total_wait_time = time::Duration::from_secs(max_time.unwrap_or(10) as u64);
+        let since = updates_since.unwrap_or(chrono::Utc::now());
+        let max_wait_time = time::Duration::from_secs(max_wait_time.unwrap_or(10) as u64);
         let iter_wait_time = time::Duration::from_secs(1);
         let now = time::Instant::now();
         let mut done = false;
@@ -352,11 +358,11 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
 
         while !done {
             println!(
-                "get posts updates - user id: {}, since: {}, elapsed time: {}ms, total time: {}ms",
+                "get posts updates - user id: {}, updates since: {}, elapsed time: {}ms, max wait time: {}ms",
                 user_id,
                 since,
                 now.elapsed().as_millis(),
-                total_wait_time.as_millis()
+                max_wait_time.as_millis()
             );
             let res = UserTimelineAgentClient::get(user_id.clone())
                 .get_updates(since)
@@ -369,7 +375,7 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
                 } else {
                     result = Some(vec![]);
                     thread::sleep(iter_wait_time);
-                    done = now.elapsed() >= total_wait_time;
+                    done = now.elapsed() >= max_wait_time;
                 }
             } else {
                 result = None;
