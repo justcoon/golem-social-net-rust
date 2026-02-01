@@ -374,8 +374,10 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
                     done = true;
                 } else {
                     result = Some(vec![]);
-                    thread::sleep(iter_wait_time);
                     done = now.elapsed() >= max_wait_time;
+                    if !done {
+                        thread::sleep(iter_wait_time);
+                    }
                 }
             } else {
                 result = None;

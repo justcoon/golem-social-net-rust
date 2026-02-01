@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { type Post, type Comment, api } from '../api';
+import { type Post, type Comment, type LikeType, api } from '../api';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '../stores/user';
 import { storeToRefs } from 'pinia';
+import LikeReactions from './LikeReactions.vue';
 
 const props = defineProps<{
   post: Post;
@@ -16,18 +17,26 @@ const { userId, isLoggedIn } = storeToRefs(userStore);
 const newComment = ref('');
 const isSubmitting = ref(false);
 
-const comments = ref<Comment[]>(
-    props.post.comments ? Object.values(props.post.comments.map(([_, comment]) => comment)) : []
-);
+const localPost = ref<Post>({ ...props.post });
 
-// Watch for prop updates to update local comments if post data changes externally (e.g. parent refetch)
-watch(() => props.post.comments, (newComments) => {
-    console.log('PostCard: comments updated', newComments);
-    if (newComments) {
-        comments.value = Object.values(newComments);
+const comments = ref<Comment[]>([]);
+
+const updateComments = (postData: Post) => {
+    if (postData.comments) {
+        comments.value = postData.comments.map(([_, comment]) => comment);
+    } else {
+        comments.value = [];
     }
-}, { deep: true });
+};
 
+updateComments(props.post);
+
+// Watch for prop updates to update local state if post data changes externally
+watch(() => props.post, (newPost) => {
+    console.log('PostCard: post updated', newPost);
+    localPost.value = { ...newPost };
+    updateComments(newPost);
+}, { deep: true });
 
 const sortedComments = computed(() => {
   return [...comments.value].sort((a, b) => {
@@ -38,7 +47,7 @@ const sortedComments = computed(() => {
 });
 
 const formattedDate = computed(() => {
-  const createdAt = props.post['created-at'];
+  const createdAt = localPost.value['created-at'];
   const dateStr = (typeof createdAt === 'object' && createdAt.timestamp) 
       ? createdAt.timestamp 
       : (createdAt as string);
@@ -50,7 +59,7 @@ const formattedDate = computed(() => {
 });
 
 function navigateToAuthor() {
-  router.push(`/profile/${props.post['created-by']}`);
+  router.push(`/profile/${localPost.value['created-by']}`);
 }
 
 async function submitComment() {
@@ -58,15 +67,16 @@ async function submitComment() {
 
     isSubmitting.value = true;
     try {
-        const response = await api.addComment(props.post['post-id'], userId.value, newComment.value);
+        const response = await api.addComment(localPost.value['post-id'], userId.value, newComment.value);
         
         // Optimistic update
         const createdNow = new Date().toISOString();
         const newCommentObj: Comment = {
-            'comment-id': response.data, // Assuming backend returns the ID string
+            'comment-id': response.data.ok,
             content: newComment.value,
             'created-by': userId.value,
-            'created-at': { timestamp: createdNow }
+            'created-at': { timestamp: createdNow },
+            likes: []
         };
         
         comments.value.push(newCommentObj);
@@ -77,6 +87,118 @@ async function submitComment() {
         isSubmitting.value = false;
     }
 }
+
+async function handlePostLike(type: LikeType) {
+    if (!userId.value) return;
+    const uid = userId.value;
+    
+    if (!localPost.value.likes) localPost.value.likes = [];
+    const likes = localPost.value.likes!;
+    
+    const existingEntry = likes.find(([u]) => u === uid);
+    const oldLike = existingEntry ? existingEntry[1] : undefined;
+    
+    if (existingEntry) {
+        existingEntry[1] = type;
+    } else {
+        likes.push([uid, type]);
+    }
+    
+    try {
+        await api.likePost(localPost.value['post-id'], uid, type);
+    } catch (error) {
+        console.error('Failed to like post:', error);
+        const currentIndex = likes.findIndex(([u]) => u === uid);
+        if (currentIndex !== -1) {
+            const entry = likes[currentIndex];
+            if (entry) {
+                if (oldLike) {
+                     entry[1] = oldLike;
+                } else {
+                     likes.splice(currentIndex, 1);
+                }
+            }
+        }
+    }
+}
+
+async function handlePostUnlike() {
+    if (!userId.value || !localPost.value.likes) return;
+    const uid = userId.value;
+    const likes = localPost.value.likes!;
+    
+    const existingIndex = likes.findIndex(([u]) => u === uid);
+    if (existingIndex === -1) return;
+    
+    const entry = likes[existingIndex];
+    if (!entry) return;
+    
+    const oldLike = entry[1];
+    likes.splice(existingIndex, 1);
+    
+    try {
+        await api.unlikePost(localPost.value['post-id'], uid);
+    } catch (error) {
+        console.error('Failed to unlike post:', error);
+        likes.push([uid, oldLike]);
+    }
+}
+
+async function handleCommentLike(comment: Comment, type: LikeType) {
+    if (!userId.value) return;
+    const uid = userId.value;
+    
+    if (!comment.likes) comment.likes = [];
+    const likes = comment.likes!;
+    
+    const existingEntry = likes.find(([u]) => u === uid);
+    const oldLike = existingEntry ? existingEntry[1] : undefined;
+    
+    if (existingEntry) {
+        existingEntry[1] = type;
+    } else {
+        likes.push([uid, type]);
+    }
+    
+    try {
+        await api.likeComment(localPost.value['post-id'], comment['comment-id'], uid, type);
+    } catch (error) {
+        console.error('Failed to like comment:', error);
+        const currentIndex = likes.findIndex(([u]) => u === uid);
+        if (currentIndex !== -1) {
+            const entry = likes[currentIndex];
+            if (entry) {
+                if (oldLike) {
+                    entry[1] = oldLike;
+                } else {
+                    likes.splice(currentIndex, 1);
+                }
+            }
+        }
+    }
+}
+
+async function handleCommentUnlike(comment: Comment) {
+    if (!userId.value || !comment.likes) return;
+    const uid = userId.value;
+    const likes = comment.likes!;
+    
+    const existingIndex = likes.findIndex(([u]) => u === uid);
+    if (existingIndex === -1) return;
+    
+    const entry = likes[existingIndex];
+    if (!entry) return;
+    
+    const oldLike = entry[1];
+    likes.splice(existingIndex, 1);
+    
+    try {
+        await api.unlikeComment(localPost.value['post-id'], comment['comment-id'], uid);
+    } catch (error) {
+        console.error('Failed to unlike comment:', error);
+        likes.push([uid, oldLike]);
+    }
+}
 </script>
 
 <template>
@@ -84,33 +206,51 @@ async function submitComment() {
     <div class="flex items-start justify-between mb-4">
       <div class="flex items-center space-x-3 cursor-pointer" @click="navigateToAuthor">
         <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold select-none">
-          {{ props.post['created-by'].charAt(0).toUpperCase() }}
+          {{ localPost['created-by'].charAt(0).toUpperCase() }}
         </div>
         <div>
-          <h3 class="font-medium text-gray-200 hover:text-purple-400 transition">{{ props.post['created-by'] }}</h3>
+          <h3 class="font-medium text-gray-200 hover:text-purple-400 transition">{{ localPost['created-by'] }}</h3>
           <p class="text-xs text-gray-500">{{ formattedDate }}</p>
         </div>
       </div>
     </div>
     
-    <div class="text-gray-300 whitespace-pre-wrap leading-relaxed">
-      {{ props.post.content }}
+    <div class="text-gray-300 whitespace-pre-wrap leading-relaxed mb-4">
+      {{ localPost.content }}
     </div>
 
-    <div class="mt-4 border-t border-neutral-800 pt-4">
+    <!-- Post Likes -->
+    <div class="py-2 border-t border-b border-neutral-800/50 mb-4">
+      <LikeReactions 
+        :likes="localPost.likes" 
+        :current-user-id="userId"
+        @like="handlePostLike"
+        @unlike="handlePostUnlike"
+      />
+    </div>
+
+    <div class="mt-4">
       <h4 class="text-sm font-semibold text-gray-400 mb-3">Comments</h4>
       
       <div v-if="comments.length === 0" class="text-xs text-gray-600 italic mb-4">
         No comments yet.
       </div>
       
-      <div class="space-y-3 mb-4">
-        <div v-for="comment in sortedComments" :key="comment['comment-id']" class="bg-neutral-800/50 rounded p-3">
-            <div class="flex justify-between items-start mb-1">
+      <div class="space-y-4 mb-4">
+        <div v-for="comment in sortedComments" :key="comment['comment-id']" class="bg-neutral-800/50 rounded-lg p-4">
+            <div class="flex justify-between items-start mb-2">
                 <span class="text-xs font-bold text-gray-300">{{ comment['created-by'] }}</span>
                 <span class="text-[10px] text-gray-600">{{ new Date(typeof comment['created-at'] === 'object' ? comment['created-at'].timestamp : comment['created-at']).toLocaleString() }}</span>
             </div>
-            <p class="text-sm text-gray-400 whitespace-pre-wrap">{{ comment.content }}</p>
+            <p class="text-sm text-gray-400 whitespace-pre-wrap mb-3">{{ comment.content }}</p>
+            
+            <!-- Comment Likes -->
+            <LikeReactions 
+                :likes="comment.likes" 
+                :current-user-id="userId"
+                @like="(type) => handleCommentLike(comment, type)"
+                @unlike="() => handleCommentUnlike(comment)"
+            />
         </div>
       </div>
 

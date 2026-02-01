@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 
 export const useUserStore = defineStore('user', () => {
     const userId = ref<string | null>(localStorage.getItem('userId'));
+    const liveTimeline = ref(false);
 
     const isLoggedIn = computed(() => !!userId.value);
 
@@ -18,6 +19,7 @@ export const useUserStore = defineStore('user', () => {
 
     return {
         userId,
+        liveTimeline,
         isLoggedIn,
         login,
         logout,
