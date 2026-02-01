@@ -86,21 +86,35 @@ impl Post {
         if !self.comments.contains_key(&comment_id) {
             Err("Comment not found".to_string())
         } else {
-            let remove_ids = self
-                .comments
-                .values()
-                .filter(|c| {
-                    c.parent_comment_id
-                        .clone()
-                        .is_some_and(|id| id == comment_id)
-                })
-                .map(|c| c.comment_id.clone())
-                .collect::<Vec<_>>();
+            fn collect_comments_to_remove(
+                comments: &HashMap<String, Comment>,
+                comment_id: &str,
+            ) -> Vec<String> {
+                let mut to_remove = Vec::new();
 
-            for remove_id in remove_ids {
+                // Add the current comment to the removal list
+                to_remove.push(comment_id.to_string());
+
+                // Find all child comments and recursively collect their descendants
+                for comment in comments.values() {
+                    if let Some(parent_id) = &comment.parent_comment_id {
+                        if parent_id == comment_id {
+                            to_remove
+                                .extend(collect_comments_to_remove(comments, &comment.comment_id));
+                        }
+                    }
+                }
+
+                to_remove
+            }
+
+            // Recursively collect all comments to remove (children and their descendants)
+            let to_remove = collect_comments_to_remove(&self.comments, &comment_id);
+
+            // Remove all collected comments
+            for remove_id in to_remove {
                 self.comments.remove(&remove_id);
             }
-            self.comments.remove(&comment_id);
 
             self.updated_at = chrono::Utc::now();
 
