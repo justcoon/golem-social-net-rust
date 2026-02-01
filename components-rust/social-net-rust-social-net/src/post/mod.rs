@@ -181,18 +181,21 @@ impl PostAgent for PostAgentImpl {
             state.updated_at = now;
 
             // let updated = TimelinesUpdaterAgentClient::get()
-            //     .post_created(user_id.clone(), state.post_id.clone())
+            //     .post_created(user_id.clone(), state.post_id.clone(), now)
             //     .await;
             //
             // println!("init post - user id: {user_id}, timelines updated: {updated}");
 
             // TimelinesUpdaterAgentClient::get()
-            //     .trigger_post_created(user_id.clone(), state.post_id.clone());
+            //     .trigger_post_created(user_id.clone(), state.post_id.clone(), now);
 
-            TimelinesUpdaterAgentClient::new_phantom()
-                .trigger_post_created(user_id.clone(), state.post_id.clone());
+            TimelinesUpdaterAgentClient::new_phantom().trigger_post_created(
+                user_id.clone(),
+                state.post_id.clone(),
+                now,
+            );
 
-            // execute_post_created_updates(user_id, state.post_id.clone()).await;
+            // execute_post_created_updates(user_id, state.post_id.clone(), now).await;
             Ok(())
         }
     }
@@ -323,7 +326,12 @@ impl PostAgent for PostAgentImpl {
 trait TimelinesUpdaterAgent {
     fn new() -> Self;
 
-    async fn post_created(&mut self, user_id: String, post_id: String) -> bool;
+    async fn post_created(
+        &mut self,
+        user_id: String,
+        post_id: String,
+        created_at: chrono::DateTime<chrono::Utc>,
+    ) -> bool;
 }
 
 struct TimelinesUpdaterAgentImpl {}
@@ -334,12 +342,21 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         Self {}
     }
 
-    async fn post_created(&mut self, user_id: String, post_id: String) -> bool {
-        execute_post_created_updates(user_id, post_id).await
+    async fn post_created(
+        &mut self,
+        user_id: String,
+        post_id: String,
+        created_at: chrono::DateTime<chrono::Utc>,
+    ) -> bool {
+        execute_post_created_updates(user_id, post_id, created_at).await
     }
 }
 
-async fn execute_post_created_updates(user_id: String, post_id: String) -> bool {
+async fn execute_post_created_updates(
+    user_id: String,
+    post_id: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+) -> bool {
     let user = UserAgentClient::get(user_id.clone()).get_user().await;
 
     if let Some(user) = user {
@@ -347,6 +364,7 @@ async fn execute_post_created_updates(user_id: String, post_id: String) -> bool 
         UserTimelineAgentClient::get(user_id.clone()).trigger_add_post(
             post_id.clone(),
             user_id.clone(),
+            created_at,
             None,
         );
 
@@ -370,6 +388,7 @@ async fn execute_post_created_updates(user_id: String, post_id: String) -> bool 
             UserTimelineAgentClient::get(connected_user_id).trigger_add_post(
                 post_id.clone(),
                 user_id.clone(),
+                created_at,
                 Some(connection_type),
             );
         }

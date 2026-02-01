@@ -19,13 +19,14 @@ impl PostRef {
     fn new(
         post_id: String,
         created_by: String,
+        created_at: chrono::DateTime<chrono::Utc>,
         created_by_connection_type: Option<UserConnectionType>,
     ) -> Self {
         PostRef {
             post_id,
             created_by,
             created_by_connection_type,
-            created_at: chrono::Utc::now(),
+            created_at,
         }
     }
 }
@@ -47,11 +48,13 @@ impl UserTimeline {
         &mut self,
         post_id: String,
         created_by: String,
+        created_at: chrono::DateTime<chrono::Utc>,
         created_by_connection_type: Option<UserConnectionType>,
     ) {
         self.posts.push(PostRef::new(
             post_id,
             created_by,
+            created_at,
             created_by_connection_type,
         ));
         self.posts
@@ -88,6 +91,7 @@ trait UserTimelineAgent {
         &mut self,
         post_id: String,
         created_by: String,
+        created_at: chrono::DateTime<chrono::Utc>,
         by_connection_type: Option<UserConnectionType>,
     ) -> Result<(), String>;
 
@@ -136,7 +140,7 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
             let updates = state
                 .posts
                 .iter()
-                .filter(|p| p.created_at >= updates_since)
+                .filter(|p| p.created_at > updates_since)
                 .cloned()
                 .collect();
 
@@ -153,13 +157,14 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         &mut self,
         post_id: String,
         created_by: String,
+        created_at: chrono::DateTime<chrono::Utc>,
         by_connection_type: Option<UserConnectionType>,
     ) -> Result<(), String> {
         self.with_state(|state| {
             println!("add post - id: {post_id}, created by: {created_by}");
 
             if !state.contains_post(post_id.clone()) {
-                state.add_post(post_id, created_by, by_connection_type);
+                state.add_post(post_id, created_by, created_at, by_connection_type);
             }
 
             Ok(())
