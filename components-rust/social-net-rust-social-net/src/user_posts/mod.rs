@@ -46,12 +46,12 @@ trait UserPostsAgent {
     fn create_post(&mut self, content: String) -> Result<String, String>;
 }
 
-struct UserPostTimelineAgentImpl {
+struct UserPostsAgentImpl {
     _id: String,
     state: Option<UserPosts>,
 }
 
-impl UserPostTimelineAgentImpl {
+impl UserPostsAgentImpl {
     fn get_state(&mut self) -> &mut UserPosts {
         self.state.get_or_insert(UserPosts::new(self._id.clone()))
     }
@@ -62,9 +62,9 @@ impl UserPostTimelineAgentImpl {
 }
 
 #[agent_implementation]
-impl UserPostsAgent for UserPostTimelineAgentImpl {
+impl UserPostsAgent for UserPostsAgentImpl {
     fn new(id: String) -> Self {
-        UserPostTimelineAgentImpl {
+        UserPostsAgentImpl {
             _id: id,
             state: None,
         }
