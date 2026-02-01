@@ -12,20 +12,19 @@ This is a simple social net application built with an agent-based architecture, 
 ### Agents
 - **User Agent**: Manages the user and user connection related operations.
 - **Post Agent**: Handles post and comments.
-- **User Post Agent**: Manages list of user posts
+- **User Post Agent**: Manages list of user posts.
 - **User Timeline Agent**: Manages user timeline.
 
 ### Key Features
-- **RESTful API** for all shopping operations
+- **RESTful API** for all social net operations
 - **Stateful Agents** with Golem Cloud managing the state
-- **AI Integration** with external LLM service for the shopping assistant
 - **Distributed Agent System** with clear responsibility boundaries
 
 ### Communication Flow
 TODO
 
 ### State Management
-All core agents (User, User Posts, User Timeline, Post) have their state managed by Golem Cloud, ensuring reliability and scalability through the agent-based architecture.
+All core agents (User, Post, User Posts, User Timeline) have their state managed by Golem Cloud, ensuring reliability and scalability through the agent-based architecture.
 
 
 ## Quick Start
