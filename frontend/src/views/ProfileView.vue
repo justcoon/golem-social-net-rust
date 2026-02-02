@@ -1,27 +1,31 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, type User, type Post } from '../api';
+import { api, type User, type Post, type UserConnectionType } from '../api';
 import { useUserStore } from '../stores/user';
+import { storeToRefs } from 'pinia';
 import PostCard from '../components/PostCard.vue';
 import CreatePost from '../components/CreatePost.vue';
 
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
+const { userId: currentUserId, isLoggedIn } = storeToRefs(userStore);
 
 const user = ref<User | null>(null);
 const posts = ref<Post[]>([]);
 const isLoading = ref(true);
+const isConnecting = ref(false);
 const error = ref('');
+const selectedConnectionType = ref<UserConnectionType>('following');
 
 const isCurrentUser = ref(false);
 
 async function loadProfile() {
-  const targetId = (route.params.id as string) || userStore.userId;
+  const targetId = (route.params.id as string) || currentUserId.value;
   if (!targetId) return;
 
-  isCurrentUser.value = targetId === userStore.userId;
+  isCurrentUser.value = targetId === currentUserId.value;
   isLoading.value = true;
   error.value = '';
   user.value = null;
@@ -65,6 +69,21 @@ async function loadProfile() {
   }
 }
 
+async function handleConnect() {
+  if (!currentUserId.value || !user.value || !isLoggedIn.value) return;
+
+  isConnecting.value = true;
+  try {
+    await api.connectUser(currentUserId.value, user.value['user-id'], selectedConnectionType.value);
+    // Refresh to show new connection
+    await loadProfile();
+  } catch (err) {
+    console.error('Failed to connect:', err);
+  } finally {
+    isConnecting.value = false;
+  }
+}
+
 watch(() => route.params.id, () => {
   loadProfile();
 }, { immediate: true });
@@ -102,11 +121,40 @@ watch(() => route.params.id, () => {
             </div>
           </div>
           
-          <div v-if="!isCurrentUser" class="flex gap-3">
-             <!-- Follow request button would go here -->
-             <button class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition font-medium">
-               Follow
+          <div v-if="!isCurrentUser && isLoggedIn" class="flex flex-col sm:flex-row items-center gap-3 bg-neutral-800/50 p-3 rounded-xl border border-neutral-700/50">
+             <div class="flex bg-neutral-900 rounded-lg p-1 border border-neutral-700">
+               <button 
+                @click="selectedConnectionType = 'following'"
+                class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                :class="selectedConnectionType === 'following' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'"
+               >
+                 Following
+               </button>
+               <button 
+                @click="selectedConnectionType = 'friend'"
+                class="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                :class="selectedConnectionType === 'friend' ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'"
+               >
+                 Friend
+               </button>
+             </div>
+             
+             <button 
+                @click="handleConnect"
+                :disabled="isConnecting"
+                class="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg transition-all font-bold text-sm shadow-lg shadow-purple-900/20 disabled:opacity-50 flex items-center gap-2"
+             >
+               <span v-if="isConnecting" class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+               {{ isConnecting ? 'Connecting...' : 'Connect' }}
              </button>
+          </div>
+          <div v-else-if="!isCurrentUser && !isLoggedIn">
+             <router-link 
+              to="/login"
+              class="px-6 py-2 border border-purple-500/50 text-purple-400 hover:bg-purple-500/10 rounded-lg transition-all font-medium text-sm"
+             >
+               Log in to Follow
+             </router-link>
           </div>
         </div>
       </div>
