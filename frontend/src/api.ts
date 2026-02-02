@@ -87,7 +87,7 @@ export const api = {
     updateEmail: (userId: string, email: string) => apiClient.put(`/users/${userId}/email`, { email }),
 
     createPost: (userId: string, content: string) => apiClient.post(`/users/${userId}/posts`, { content }),
-    getPosts: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/posts`, { params: { query } }),
+    getPosts: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/posts/search`, { params: { query } }),
 
     getTimeline: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/timeline/posts`, { params: { query } }),
 
@@ -119,4 +119,65 @@ export const api = {
 
     unlikeComment: (postId: string, commentId: string, userId: string) =>
         apiClient.delete(`/posts/${postId}/comments/${commentId}/likes/${userId}`),
+
+    // Chat APIs
+    createChat: (userId: string, participants: string[]) =>
+        apiClient.post(`/users/${userId}/chats`, { participants }),
+
+    getChats: (userId: string, query: string = '') =>
+        apiClient.get(`/users/${userId}/chats/search`, { params: { query } }),
+
+    getChatUpdates: (userId: string, since: string) =>
+        apiClient.get(`/users/${userId}/chats/updates`, { params: { since } }),
+
+    addChatMessage: (chatId: string, userId: string, content: string) =>
+        apiClient.post(`/chats/${chatId}/messages`, { 'user-id': userId, content }),
+
+    deleteChatMessage: (chatId: string, messageId: string) =>
+        apiClient.delete(`/chats/${chatId}/messages/${messageId}`),
+
+    likeChatMessage: (chatId: string, messageId: string, userId: string, likeType: LikeType) =>
+        apiClient.put(`/chats/${chatId}/messages/${messageId}/likes`, { 'user-id': userId, 'like-type': likeType }),
+
+    unlikeChatMessage: (chatId: string, messageId: string, userId: string) =>
+        apiClient.delete(`/chats/${chatId}/messages/${messageId}/likes/${userId}`),
+
+    addChatParticipant: (chatId: string, participants: string[]) =>
+        apiClient.patch(`/chats/${chatId}/participants`, { participants }),
 };
+
+export interface Message {
+    'message-id': string;
+    content: string;
+    likes: UserLikeTuple[];
+    'created-by': string;
+    'created-at': Timestamp;
+    'updated-at': Timestamp;
+}
+
+export interface Chat {
+    'chat-id': string;
+    'created-by': string;
+    participants: string[];
+    messages: Message[];
+    'created-at': Timestamp;
+    'updated-at': Timestamp;
+}
+
+export interface ChatRef {
+    'chat-id': string;
+    'created-at': Timestamp;
+    'updated-at': Timestamp;
+}
+
+export interface UserChats {
+    'user-id': string;
+    chats: ChatRef[];
+    'created-at': Timestamp;
+    'updated-at': Timestamp;
+}
+
+export interface UserChatsUpdates {
+    'user-id': string;
+    chats: ChatRef[];
+}

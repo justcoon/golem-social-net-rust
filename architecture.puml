@@ -26,6 +26,8 @@ package "Golem Cloud" {
         [User Post Agent] as user_posts STATEFUL
         [User Timeline Agent] as user_timeline STATEFUL
         [Timelines Updater Agent] as timeline_updater STATEFUL
+        [Chat Agent] as chat STATEFUL
+        [User Chats Agent] as user_chats STATEFUL
     }
 
     package "Ephemeral Agents (View/Computational)" {
@@ -33,6 +35,8 @@ package "Golem Cloud" {
         [User Posts View Agent] as user_posts_view EPHEMERAL
         [User Timeline View Agent] as timeline_view EPHEMERAL
         [User Timeline Updates Agent] as timeline_updates EPHEMERAL
+        [User Chats View Agent] as chats_view EPHEMERAL
+        [User Chats Updates Agent] as chats_updates EPHEMERAL
     }
 }
 
@@ -47,6 +51,10 @@ gateway --> user_search : "Search Users"
 gateway --> user_posts_view : "Get User Posts"
 gateway --> timeline_view : "Get Timeline"
 gateway --> timeline_updates : "Timeline Long-polling"
+gateway --> user_chats : "Create Chat"
+gateway --> chat : "Send Message / Like"
+gateway --> chats_view : "Get User Chats"
+gateway --> chats_updates : "Chat Long-polling"
 
 ' Intern-agent interactions
 user_search --> user : "Query Discovery"
@@ -62,6 +70,12 @@ post --> timeline_updater : "Post Created Event"
 timeline_updater --> user : "Get Connections"
 timeline_updater --> user_timeline : "Fan-out Broadcast"
 
+user_chats --> chat : "Initialize Chat"
+chat --> user_chats : "Chat Update Notifications"
+chats_view --> user_chats : "Get Chat Refs"
+chats_view --> chat : "Resolve Full Content"
+chats_updates --> user_chats : "Poll for Refs"
+
 ' Add notes
 note right of gateway
   <b>API Gateway</b>
@@ -71,9 +85,11 @@ note right of gateway
   <b>Routes by Prefix</b>
   • /.../users/search → User Search Agent
   • /.../users/{id} → User Agent
-  • /.../users/{id}/posts → User Post Agents
-  • /.../users/{id}/timeline → User Timeline Agents
+  • /.../users/{id}/posts → User Posts Agent
+  • /.../users/{id}/timeline → User Timeline Agent
+  • /.../users/{id}/chats → User Chats Agent
   • /.../posts/{id} → Post Agent
+  • /.../chats/{id} → Chat Agent
 end note
 
 @enduml

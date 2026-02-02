@@ -1,10 +1,17 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
 import { RouterView } from 'vue-router';
 
 import { useUserStore } from './stores/user';
 import NavBar from './components/NavBar.vue';
 
 const userStore = useUserStore();
+
+onMounted(() => {
+  if (userStore.isLoggedIn) {
+    userStore.fetchUserProfile();
+  }
+});
 </script>
 
 <template>

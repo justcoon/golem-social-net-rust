@@ -64,18 +64,18 @@ httpApi:
               let content: string = request.body.content;
               let result = agent.create-post(content);
               match result {  ok(x) => {status: 200u64, body: ok({post-id: x})}, err(x) => {status: 400u64, body: err({message: x})} }
-#        - method: GET
-#          path: /v1/social-net/users/{user-id}/posts
-#          binding:
-#            type: default
-#            componentName: social-net-rust:social-net
-#            response: |
-#              let id: string = request.path.user-id;
-#              let agent = user-posts-agent(id);
-#              let result = agent.get-posts();
-#              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: GET
-          path: /v1/social-net/users/{user-id}/posts?{query}
+          path: /v1/social-net/users/{user-id}/posts
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let agent = user-posts-agent(id);
+              let result = agent.get-posts();
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: GET
+          path: /v1/social-net/users/{user-id}/posts/search?{query}
           binding:
             type: default
             componentName: social-net-rust:social-net
@@ -84,6 +84,49 @@ httpApi:
               let query: string = request.query.query;
               let agent = user-posts-view-agent();
               let result = agent.get-posts-view(id, query);
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: POST
+          path: /v1/social-net/users/{user-id}/chats
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let agent = user-chats-agent(id);
+              let participants = request.body.participants;
+              let result = agent.create-chat(participants);
+              match result {  ok(x) => {status: 200u64, body: ok({chat-id: x})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: GET
+          path: /v1/social-net/users/{user-id}/chats
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let agent = user-chats-agent(id);
+              let result = agent.get-chats();
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: GET
+          path: /v1/social-net/users/{user-id}/chats/search?{query}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let query: string = request.query.query;
+              let agent = user-chats-view-agent();
+              let result = agent.get-chats-view(id, query);
+              match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
+        - method: GET
+          path: /v1/social-net/users/{user-id}/chats/updates?{since}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.user-id;
+              let since: string = request.query.since;
+              let agent = user-chats-updates-agent();
+              let result = agent.get-chats-updates(id, some({timestamp: since}), none);
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: GET
           path: /v1/social-net/users/{user-id}/timeline/posts?{query}
@@ -212,6 +255,65 @@ httpApi:
               let user_id: string = request.path.user-id;
               let agent = post-agent(id);
               let result = agent.remove-comment-like(comment_id, user_id);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "removed"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: POST
+          path: /v1/social-net/chats/{chat-id}/messages
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.chat-id;
+              let message: string = request.body.content;
+              let user_id: string = request.body.user-id;
+              let agent = chat-agent(id);
+              let result = agent.add-message(user_id, message);
+              match result {  ok(x) => {status: 200u64, body: ok(x)}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: PATCH
+          path: /v1/social-net/chats/{chat-id}/participants
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.chat-id;
+              let participants = request.body.participants;
+              let agent = chat-agent(id);
+              let result = agent.add-participants(participants);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "updated"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: DELETE
+          path: /v1/social-net/chats/{chat-id}/messages/{message-id}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.chat-id;
+              let message_id: string = request.path.message-id;
+              let agent = chat-agent(id);
+              let result = agent.remove-message(message_id);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "removed"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: PUT
+          path: /v1/social-net/chats/{chat-id}/messages/{message-id}/likes
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.chat-id;
+              let message_id: string = request.path.message-id;
+              let user_id: string = request.body.user-id;
+              let like_type = request.body.like-type;
+              let agent = chat-agent(id);
+              let result = agent.set-message-like(message_id, user_id, like_type);
+              match result {  ok(_) => {status: 200u64, body: ok({message: "set"})}, err(x) => {status: 400u64, body: err({message: x})} }
+        - method: DELETE
+          path: /v1/social-net/chats/{chat-id}/messages/{message-id}/likes/{user-id}
+          binding:
+            type: default
+            componentName: social-net-rust:social-net
+            response: |
+              let id: string = request.path.chat-id;
+              let message_id: string = request.path.message-id;
+              let user_id: string = request.path.user-id;
+              let agent = chat-agent(id);
+              let result = agent.remove-message-like(message_id, user_id);
               match result {  ok(_) => {status: 200u64, body: ok({message: "removed"})}, err(x) => {status: 400u64, body: err({message: x})} }
 
   deployments:

@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, type User, type Post, type UserConnectionType } from '../api';
 import { useUserStore } from '../stores/user';
+import { useChatStore } from '../stores/chat';
 import { storeToRefs } from 'pinia';
 import PostCard from '../components/PostCard.vue';
 import CreatePost from '../components/CreatePost.vue';
@@ -10,6 +11,7 @@ import CreatePost from '../components/CreatePost.vue';
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
+const chatStore = useChatStore();
 const { userId: currentUserId, isLoggedIn } = storeToRefs(userStore);
 
 const user = ref<User | null>(null);
@@ -19,6 +21,20 @@ const isConnecting = ref(false);
 const isDisconnecting = ref(false);
 const error = ref('');
 const selectedConnectionType = ref<UserConnectionType>('following');
+
+const activeMenuUserId = ref<string | null>(null);
+
+function toggleMenu(userId: string, event: Event) {
+  event.stopPropagation();
+  activeMenuUserId.value = activeMenuUserId.value === userId ? null : userId;
+}
+
+// Close menu when clicking away
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', () => {
+    activeMenuUserId.value = null;
+  });
+}
 
 const connectionToCurrentUser = computed(() => {
   if (!user.value || !currentUserId.value) return null;
@@ -110,6 +126,25 @@ async function handleDisconnect(type: UserConnectionType) {
   } finally {
     isDisconnecting.value = false;
   }
+}
+
+async function handleDisconnectUser(targetId: string, type: UserConnectionType) {
+  if (!currentUserId.value || !isLoggedIn.value) return;
+  
+  isDisconnecting.value = true;
+  try {
+    await api.disconnectUser(currentUserId.value, targetId, type);
+    await loadProfile();
+  } catch (err) {
+    console.error('Failed to disconnect user:', err);
+  } finally {
+    isDisconnecting.value = false;
+  }
+}
+
+async function chatWithUser(targetId: string) {
+  await chatStore.goToChatWithUser(targetId);
+  router.push('/chats');
 }
 
 watch(() => route.params.id, () => {
@@ -237,15 +272,60 @@ watch(() => route.params.id, () => {
                 <div 
                   v-for="conn in user['connected-users']" 
                   :key="conn[0]" 
-                  class="flex items-center space-x-3 cursor-pointer hover:bg-neutral-800 p-2 rounded-lg transition"
+                  class="flex items-center justify-between group cursor-pointer hover:bg-neutral-800 p-2 rounded-lg transition relative"
                   @click="router.push(`/profile/${conn[0]}`)"
                 >
-                    <div class="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-bold text-gray-400">
-                        {{ conn[0].charAt(0).toUpperCase() }}
+                    <div class="flex items-center space-x-3 min-w-0">
+                        <div class="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-bold text-gray-400 shrink-0">
+                            {{ conn[0].charAt(0).toUpperCase() }}
+                        </div>
+                        <div class="min-w-0">
+                             <p class="text-sm font-medium text-gray-200 truncate">{{ conn[0] }}</p>
+                             <p class="text-xs text-gray-500 capitalize truncate">{{ conn[1]['connection-types'].join(', ') }}</p>
+                        </div>
                     </div>
-                    <div>
-                         <p class="text-sm font-medium text-gray-200">{{ conn[0] }}</p>
-                         <p class="text-xs text-gray-500 capitalize">{{ conn[1]['connection-types'].join(', ') }}</p>
+
+                    <!-- Action Menu -->
+                    <div class="relative">
+                        <button 
+                            @click="toggleMenu(conn[0], $event)"
+                            class="p-1 rounded-md text-gray-500 hover:text-white hover:bg-neutral-700 transition"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                            </svg>
+                        </button>
+
+                        <!-- Dropdown -->
+                        <div 
+                            v-if="activeMenuUserId === conn[0]"
+                            class="absolute right-0 mt-1 w-36 bg-neutral-900 border border-neutral-700 rounded-lg shadow-xl z-20 py-1 overflow-hidden"
+                            @click.stop
+                        >
+                            <button 
+                                @click="chatWithUser(conn[0])"
+                                class="w-full text-left px-4 py-2 text-xs text-gray-200 hover:bg-purple-600 transition flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                </svg>
+                                Message
+                            </button>
+                            
+                            <template v-if="isCurrentUser">
+                                <button 
+                                    v-for="type in conn[1]['connection-types']"
+                                    :key="type"
+                                    @click="handleDisconnectUser(conn[0], type)"
+                                    class="w-full text-left px-4 py-2 text-xs text-red-400 hover:bg-red-500 hover:text-white transition flex items-center gap-2 border-t border-neutral-700"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                      <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                    Remove {{ type }}
+                                </button>
+                            </template>
+                        </div>
                     </div>
                 </div>
              </div>

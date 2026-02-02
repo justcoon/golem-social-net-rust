@@ -1,7 +1,7 @@
 # golem-social-net-rust
 
 ## Overview
-This is a simple social net application built with an agent-based architecture, leveraging Golem Cloud for distributed, stateful agents.
+This is a simple social networking application built with an agent-based architecture, leveraging Golem Cloud for distributed, stateful agents.
 
 ![Architecture Diagram](architecture.png)
 
@@ -18,12 +18,16 @@ The application follows a granular agent-based architecture, where different asp
 - **User Post Agent**: Maintains a registry of all posts created by a specific user.
 - **User Timeline Agent**: Stores references to posts that should appear in a user's personal timeline.
 - **Timelines Updater Agent**: Orchestrates the distribution of new posts to the timelines of the author and their connections.
+- **Chat Agent**: Manages a single chat room, its participants, and its message history (including likes).
+- **User Chats Agent**: Maintains a registry of all active chats for a specific user.
 
 #### Ephemeral Agents (View/Computational)
 - **User Search Agent**: Performs global user searches by discovering and querying User Agent instances.
 - **User Posts View Agent**: Generates a detailed view of a user's posts by aggregating content from multiple Post Agents.
 - **User Timeline View Agent**: Generates a detailed view of a user's timeline by aggregating content from multiple Post Agents.
 - **User Timeline Updates Agent**: Implements a long-polling mechanism to provide real-time updates for a user's timeline.
+- **User Chats View Agent**: Aggregates full chat content for a user by querying multiple Chat Agents.
+- **User Chats Updates Agent**: Implements a long-polling mechanism to provide real-time notification of new messages or chats.
 
 ### Key Features
 - **RESTful API** for all social net operations
@@ -52,8 +56,13 @@ The system manages interactions through several distinct flow patterns:
    - It then performs a fan-out broadcast, adding the post reference to the **User Timeline Agent** of every follower and friend.
 
 5. **Real-time Synchronization**:
-   - The **User Timeline Updates Agent** implements a long-polling mechanism.
-   - It monitors the state of a **User Timeline Agent** and returns new post references as soon as they are broadcased by the updater, allowing for live feed updates.
+   - The **User Timeline Updates Agent** and **User Chats Updates Agent** implement long-polling mechanisms.
+   - They monitor stateful agents (**User Timeline Agent** and **User Chats Agent**) and return new references as soon as they are updated, allowing for live UI updates without constant full-page refreshes.
+
+6. **Private Messaging & Group Chats**:
+   - When a user initiates a chat, a **User Chats Agent** (stateful) initializes a new **Chat Agent**.
+   - The **Chat Agent** handles all messages and reactions, and notifies the **User Chats Agent** of every participant whenever an update occurs.
+   - Read operations are optimized through the **User Chats View Agent**, which handles parallel resolution of chat metadata and content.
 
 ### State Management
 All core agents (User, Post, User Posts, User Timeline) have their state managed by Golem Cloud, ensuring reliability and scalability through the agent-based architecture.
