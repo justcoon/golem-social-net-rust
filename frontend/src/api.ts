@@ -11,13 +11,17 @@ export const apiClient = axios.create({
 
 export type UserConnectionType = 'friend' | 'following' | 'follower'
 
+export interface Timestamp {
+    timestamp: string;
+}
+
 // Types based on inferred backend usage
 
 export interface ConnectedUser {
     'user-id': string;
     'connection-types': UserConnectionType[];
-    'created-at': { timestamp: string };
-    'updated-at': { timestamp: string };
+    'created-at': Timestamp;
+    'updated-at': Timestamp;
 }
 // Connected users is a list of tuples: [userId, UserDetails]
 export type ConnectedUserTuple = [string, ConnectedUser];
@@ -26,7 +30,7 @@ export interface User {
     'user-id': string;
     name?: string;
     email?: string;
-    'created-at'?: { timestamp: string } | string; // Supporting both formats encountered
+    'created-at'?: Timestamp; // Enforced Timestamp only
     'connected-users'?: ConnectedUserTuple[];
 }
 
@@ -40,7 +44,7 @@ export interface Comment {
     content: string;
     likes?: UserLikeTuple[];
     'created-by': string;
-    'created-at': { timestamp: string } | string;
+    'created-at': Timestamp;
 }
 // Comments is a list of tuples: [commentId, Comment]
 export type CommentTuple = [string, Comment];
@@ -49,7 +53,7 @@ export interface Post {
     'post-id': string;
     content: string;
     'created-by': string;
-    'created-at': { timestamp: string } | string;
+    'created-at': Timestamp;
     likes?: UserLikeTuple[];
     comments?: CommentTuple[];
 }
@@ -58,7 +62,7 @@ export interface PostRef {
     'post-id': string;
     'created-by': string;
     'created-by-connection-type'?: UserConnectionType;
-    'created-at': { timestamp: string } | string;
+    'created-at': Timestamp;
 }
 
 export interface TimelineUpdates {
@@ -83,7 +87,7 @@ export const api = {
     updateEmail: (userId: string, email: string) => apiClient.put(`/users/${userId}/email`, { email }),
 
     createPost: (userId: string, content: string) => apiClient.post(`/users/${userId}/posts`, { content }),
-    getPosts: (userId: string) => apiClient.get(`/users/${userId}/posts`),
+    getPosts: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/posts`, { params: { query } }),
 
     getTimeline: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/timeline/posts`, { params: { query } }),
 

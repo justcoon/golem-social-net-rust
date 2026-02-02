@@ -42,7 +42,7 @@ async function startPolling() {
                 const newestPost = posts.value[0];
                 if (newestPost) {
                     const createdAt = newestPost['created-at'];
-                    since = typeof createdAt === 'object' ? createdAt.timestamp : createdAt;
+                    since = createdAt.timestamp;
                 }
             }
 
