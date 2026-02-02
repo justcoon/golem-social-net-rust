@@ -118,7 +118,7 @@ watch(() => route.params.id, () => {
            <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
              <h3 class="font-bold text-gray-200 mb-4">About</h3>
              <p class="text-gray-400 text-sm">
-                Joined {{ new Date((typeof user['created-at'] === 'object' ? user['created-at'].timestamp : user['created-at']) || Date.now()).toLocaleDateString() }}
+                Joined {{ new Date(user['created-at']?.timestamp || Date.now()).toLocaleDateString() }}
              </p>
            </div>
            

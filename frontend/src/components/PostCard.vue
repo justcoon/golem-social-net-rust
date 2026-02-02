@@ -40,17 +40,15 @@ watch(() => props.post, (newPost) => {
 
 const sortedComments = computed(() => {
   return [...comments.value].sort((a, b) => {
-    const timeA = typeof a['created-at'] === 'object' ? a['created-at'].timestamp : a['created-at'];
-    const timeB = typeof b['created-at'] === 'object' ? b['created-at'].timestamp : b['created-at'];
+    const timeA = a['created-at'].timestamp;
+    const timeB = b['created-at'].timestamp;
     return new Date(timeA).getTime() - new Date(timeB).getTime();
   });
 });
 
 const formattedDate = computed(() => {
   const createdAt = localPost.value['created-at'];
-  const dateStr = (typeof createdAt === 'object' && createdAt.timestamp) 
-      ? createdAt.timestamp 
-      : (createdAt as string);
+  const dateStr = createdAt.timestamp;
 
   return new Date(dateStr).toLocaleString(undefined, {
     dateStyle: 'medium',
@@ -240,7 +238,7 @@ async function handleCommentUnlike(comment: Comment) {
         <div v-for="comment in sortedComments" :key="comment['comment-id']" class="bg-neutral-800/50 rounded-lg p-4">
             <div class="flex justify-between items-start mb-2">
                 <span class="text-xs font-bold text-gray-300">{{ comment['created-by'] }}</span>
-                <span class="text-[10px] text-gray-600">{{ new Date(typeof comment['created-at'] === 'object' ? comment['created-at'].timestamp : comment['created-at']).toLocaleString() }}</span>
+                <span class="text-[10px] text-gray-600">{{ new Date(comment['created-at'].timestamp).toLocaleString() }}</span>
             </div>
             <p class="text-sm text-gray-400 whitespace-pre-wrap mb-3">{{ comment.content }}</p>
             
