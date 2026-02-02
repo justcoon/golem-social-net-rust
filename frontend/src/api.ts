@@ -83,7 +83,7 @@ export const api = {
     updateEmail: (userId: string, email: string) => apiClient.put(`/users/${userId}/email`, { email }),
 
     createPost: (userId: string, content: string) => apiClient.post(`/users/${userId}/posts`, { content }),
-    getPosts: (userId: string) => apiClient.get(`/users/${userId}/posts`),
+    getPosts: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/posts`, { params: { query } }),
 
     getTimeline: (userId: string, query: string = '') => apiClient.get(`/users/${userId}/timeline/posts`, { params: { query } }),
 

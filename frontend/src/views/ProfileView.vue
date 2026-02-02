@@ -33,7 +33,7 @@ async function loadProfile() {
     // The raw `getPosts` endpoint only returns IDs without content.
     const [userRes, postsRes] = await Promise.allSettled([
       api.getUser(targetId),
-      api.getTimeline(targetId, `created-by:${targetId}`)
+      api.getPosts(targetId)
     ]);
 
     if (userRes.status === 'fulfilled') {
