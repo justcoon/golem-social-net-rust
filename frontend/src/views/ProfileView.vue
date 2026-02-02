@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, type User, type Post, type UserConnectionType } from '../api';
 import { useUserStore } from '../stores/user';
@@ -16,10 +16,23 @@ const user = ref<User | null>(null);
 const posts = ref<Post[]>([]);
 const isLoading = ref(true);
 const isConnecting = ref(false);
+const isDisconnecting = ref(false);
 const error = ref('');
 const selectedConnectionType = ref<UserConnectionType>('following');
 
+const connectionToCurrentUser = computed(() => {
+  if (!user.value || !currentUserId.value) return null;
+  const connections = user.value['connected-users'] || [];
+  return connections.find(([id]) => id === currentUserId.value);
+});
+
 const isCurrentUser = ref(false);
+
+const isAlreadyConnected = computed(() => {
+  if (!user.value || !currentUserId.value) return false;
+  const connections = user.value['connected-users'] || [];
+  return connections.some(([id]) => id === currentUserId.value);
+});
 
 async function loadProfile() {
   const targetId = (route.params.id as string) || currentUserId.value;
@@ -84,6 +97,21 @@ async function handleConnect() {
   }
 }
 
+async function handleDisconnect(type: UserConnectionType) {
+  if (!currentUserId.value || !user.value || !isLoggedIn.value) return;
+
+  isDisconnecting.value = true;
+  try {
+    await api.disconnectUser(currentUserId.value, user.value['user-id'], type);
+    // Refresh to show connection removed
+    await loadProfile();
+  } catch (err) {
+    console.error('Failed to disconnect:', err);
+  } finally {
+    isDisconnecting.value = false;
+  }
+}
+
 watch(() => route.params.id, () => {
   loadProfile();
 }, { immediate: true });
@@ -121,7 +149,7 @@ watch(() => route.params.id, () => {
             </div>
           </div>
           
-          <div v-if="!isCurrentUser && isLoggedIn" class="flex flex-col sm:flex-row items-center gap-3 bg-neutral-800/50 p-3 rounded-xl border border-neutral-700/50">
+          <div v-if="!isCurrentUser && isLoggedIn && !isAlreadyConnected" class="flex flex-col sm:flex-row items-center gap-3 bg-neutral-800/50 p-3 rounded-xl border border-neutral-700/50">
              <div class="flex bg-neutral-900 rounded-lg p-1 border border-neutral-700">
                <button 
                 @click="selectedConnectionType = 'following'"
@@ -155,6 +183,39 @@ watch(() => route.params.id, () => {
              >
                Log in to Follow
              </router-link>
+          </div>
+          <div v-else-if="!isCurrentUser && isAlreadyConnected" class="flex flex-col gap-2">
+             <div v-if="connectionToCurrentUser" class="flex flex-wrap gap-2 justify-center md:justify-start">
+                <div 
+                    v-for="type in connectionToCurrentUser[1]['connection-types']" 
+                    :key="type"
+                    class="flex items-center gap-2 bg-neutral-800/50 px-3 py-1.5 rounded-lg border border-neutral-700/50 group transition-all hover:border-neutral-600"
+                >
+                    <span class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></span>
+                    <span class="text-xs font-medium text-gray-300 capitalize">{{ type }}</span>
+                    <button 
+                        @click="handleDisconnect(type)"
+                        :disabled="isDisconnecting"
+                        class="ml-1 text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                        :title="`Remove ${type}`"
+                    >
+                        <svg v-if="!isDisconnecting" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                        <span v-else class="w-3 h-3 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin block"></span>
+                    </button>
+                </div>
+                
+                <!-- Additional connect option if not all types are connected -->
+                <button 
+                  v-if="connectionToCurrentUser[1]['connection-types'].length < 2"
+                  @click="handleConnect"
+                  :disabled="isConnecting"
+                  class="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-gray-300 rounded-lg transition-all text-xs font-medium border border-neutral-700"
+                >
+                  + Add {{ connectionToCurrentUser[1]['connection-types'].includes('friend') ? 'Following' : 'Friend' }}
+                </button>
+             </div>
           </div>
         </div>
       </div>
