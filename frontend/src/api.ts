@@ -108,6 +108,9 @@ export const api = {
     addComment: (postId: string, userId: string, content: string, parentCommentId?: string) =>
         apiClient.post(`/posts/${postId}/comments`, { 'user-id': userId, content, 'parent-comment-id': parentCommentId }),
 
+    deleteComment: (postId: string, commentId: string) =>
+        apiClient.delete(`/posts/${postId}/comments/${commentId}`),
+
     likePost: (postId: string, userId: string, likeType: LikeType) =>
         apiClient.put(`/posts/${postId}/likes`, { 'user-id': userId, 'like-type': likeType }),
 

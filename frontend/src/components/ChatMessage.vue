@@ -11,7 +11,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'like', type: LikeType): void;
   (e: 'unlike'): void;
+  (e: 'delete'): void;
 }>();
+
+function handleDelete() {
+  if (confirm('Are you sure you want to delete this message?')) {
+    emit('delete');
+  }
+}
 
 const isOwnMessage = computed(() => props.message['created-by'] === props.currentUserId);
 
@@ -37,9 +44,20 @@ const likesTuple = computed<UserLikeTuple[]>(() => {
       class="max-w-[80%] rounded-2xl p-3 shadow-sm relative group"
       :class="isOwnMessage ? 'bg-purple-600 text-white rounded-tr-none' : 'bg-neutral-800 text-gray-200 rounded-tl-none'"
     >
-      <div class="text-sm whitespace-pre-wrap leading-relaxed">
+      <div class="text-sm whitespace-pre-wrap leading-relaxed pr-6">
         {{ message.content }}
       </div>
+      
+      <button 
+        v-if="isOwnMessage" 
+        @click="handleDelete"
+        class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-white/50 hover:text-white"
+        title="Delete message"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clip-rule="evenodd" />
+        </svg>
+      </button>
       
       <!-- Reactions overlay/footer -->
       <div class="mt-2" v-if="likesTuple.length > 0 || !isOwnMessage">

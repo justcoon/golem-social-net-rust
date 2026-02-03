@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { useUserStore } from '../stores/user';
 import { storeToRefs } from 'pinia';
 import LikeReactions from './LikeReactions.vue';
+import CommentItem from './CommentItem.vue';
 
 const props = defineProps<{
   post: Post;
@@ -38,12 +39,13 @@ watch(() => props.post, (newPost) => {
     updateComments(newPost);
 }, { deep: true });
 
-const sortedComments = computed(() => {
-  return [...comments.value].sort((a, b) => {
-    const timeA = a['created-at'].timestamp;
-    const timeB = b['created-at'].timestamp;
-    return new Date(timeA).getTime() - new Date(timeB).getTime();
-  });
+const topLevelComments = computed(() => {
+  return comments.value.filter(c => !c['parent-comment-id'])
+    .sort((a, b) => {
+      const timeA = a['created-at'].timestamp;
+      const timeB = b['created-at'].timestamp;
+      return new Date(timeA).getTime() - new Date(timeB).getTime();
+    });
 });
 
 const formattedDate = computed(() => {
@@ -84,6 +86,26 @@ async function submitComment() {
     } finally {
         isSubmitting.value = false;
     }
+}
+
+function handleCommentAdded(newCommentObj: Comment) {
+  comments.value.push(newCommentObj);
+}
+
+function handleCommentDeleted(commentId: string) {
+  const toRemove = new Set<string>();
+  
+  function collectDescendants(id: string) {
+    toRemove.add(id);
+    comments.value.forEach(c => {
+      if (c['parent-comment-id'] === id) {
+        collectDescendants(c['comment-id']);
+      }
+    });
+  }
+  
+  collectDescendants(commentId);
+  comments.value = comments.value.filter(c => !toRemove.has(c['comment-id']));
 }
 
 async function handlePostLike(type: LikeType) {
@@ -142,61 +164,7 @@ async function handlePostUnlike() {
     }
 }
 
-async function handleCommentLike(comment: Comment, type: LikeType) {
-    if (!userId.value) return;
-    const uid = userId.value;
-    
-    if (!comment.likes) comment.likes = [];
-    const likes = comment.likes!;
-    
-    const existingEntry = likes.find(([u]) => u === uid);
-    const oldLike = existingEntry ? existingEntry[1] : undefined;
-    
-    if (existingEntry) {
-        existingEntry[1] = type;
-    } else {
-        likes.push([uid, type]);
-    }
-    
-    try {
-        await api.likeComment(localPost.value['post-id'], comment['comment-id'], uid, type);
-    } catch (error) {
-        console.error('Failed to like comment:', error);
-        const currentIndex = likes.findIndex(([u]) => u === uid);
-        if (currentIndex !== -1) {
-            const entry = likes[currentIndex];
-            if (entry) {
-                if (oldLike) {
-                    entry[1] = oldLike;
-                } else {
-                    likes.splice(currentIndex, 1);
-                }
-            }
-        }
-    }
-}
-
-async function handleCommentUnlike(comment: Comment) {
-    if (!userId.value || !comment.likes) return;
-    const uid = userId.value;
-    const likes = comment.likes!;
-    
-    const existingIndex = likes.findIndex(([u]) => u === uid);
-    if (existingIndex === -1) return;
-    
-    const entry = likes[existingIndex];
-    if (!entry) return;
-    
-    const oldLike = entry[1];
-    likes.splice(existingIndex, 1);
-    
-    try {
-        await api.unlikeComment(localPost.value['post-id'], comment['comment-id'], uid);
-    } catch (error) {
-        console.error('Failed to unlike comment:', error);
-        likes.push([uid, oldLike]);
-    }
-}
+// Comment likes are now handled in CommentItem.vue
 </script>
 
 <template>
@@ -235,21 +203,16 @@ async function handleCommentUnlike(comment: Comment) {
       </div>
       
       <div class="space-y-4 mb-4">
-        <div v-for="comment in sortedComments" :key="comment['comment-id']" class="bg-neutral-800/50 rounded-lg p-4">
-            <div class="flex justify-between items-start mb-2">
-                <span class="text-xs font-bold text-gray-300">{{ comment['created-by'] }}</span>
-                <span class="text-[10px] text-gray-600">{{ new Date(comment['created-at'].timestamp).toLocaleString() }}</span>
-            </div>
-            <p class="text-sm text-gray-400 whitespace-pre-wrap mb-3">{{ comment.content }}</p>
-            
-            <!-- Comment Likes -->
-            <LikeReactions 
-                :likes="comment.likes" 
-                :current-user-id="userId"
-                @like="(type) => handleCommentLike(comment, type)"
-                @unlike="() => handleCommentUnlike(comment)"
-            />
-        </div>
+        <CommentItem 
+          v-for="comment in topLevelComments" 
+          :key="comment['comment-id']"
+          :comment="comment"
+          :all-comments="comments"
+          :post-id="localPost['post-id']"
+          :depth="0"
+          @comment-added="handleCommentAdded"
+          @comment-deleted="handleCommentDeleted"
+        />
       </div>
 
       <div v-if="isLoggedIn" class="flex gap-2">
