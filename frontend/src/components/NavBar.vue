@@ -43,6 +43,13 @@ function handleLogout() {
               >
                 My Profile
               </router-link>
+
+              <router-link to="/chats" 
+                class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition"
+                 active-class="bg-gray-900 text-white"
+              >
+                Chats
+              </router-link>
             </div>
           </div>
         </div>
