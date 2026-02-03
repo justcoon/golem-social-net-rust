@@ -19,6 +19,7 @@ const emit = defineEmits<{
 const userStore = useUserStore();
 const { userId, isLoggedIn } = storeToRefs(userStore);
 
+const isCollapsed = ref(true);
 const isReplying = ref(false);
 const replyContent = ref('');
 const isSubmitting = ref(false);
@@ -27,6 +28,23 @@ const childComments = computed(() => {
   return props.allComments.filter(c => c['parent-comment-id'] === props.comment['comment-id'])
     .sort((a, b) => new Date(a['created-at'].timestamp).getTime() - new Date(b['created-at'].timestamp).getTime());
 });
+
+const totalNestedCount = computed(() => {
+  let count = childComments.value.length;
+  childComments.value.forEach(child => {
+    count += countSubReplies(child['comment-id']);
+  });
+  return count;
+});
+
+function countSubReplies(commentId: string): number {
+  const babies = props.allComments.filter(c => c['parent-comment-id'] === commentId);
+  let count = babies.length;
+  babies.forEach(b => {
+    count += countSubReplies(b['comment-id']);
+  });
+  return count;
+}
 
 async function handleLike(type: LikeType) {
   if (!userId.value) return;
@@ -113,52 +131,66 @@ async function submitReply() {
 
 <template>
   <div class="comment-item" :style="{ marginLeft: depth > 0 ? '1.5rem' : '0' }">
-    <div class="bg-neutral-800/50 rounded-lg p-4 mb-3 border-l-2 border-transparent hover:border-purple-500/30 transition-colors">
-      <div class="flex justify-between items-start mb-2">
-        <span class="text-xs font-bold text-gray-300">{{ comment['created-by'] }}</span>
+    <div class="bg-neutral-800/50 rounded-lg p-3 mb-2 border-l-2 border-transparent hover:border-purple-500/30 transition-all group">
+      <div class="flex justify-between items-center mb-1">
+        <div class="flex items-center space-x-2">
+          <button 
+            @click="isCollapsed = !isCollapsed" 
+            class="w-4 h-4 flex items-center justify-center rounded bg-neutral-700 text-gray-400 hover:text-purple-400 hover:bg-neutral-600 transition text-[10px] font-bold"
+          >
+            {{ isCollapsed ? '+' : '−' }}
+          </button>
+          <span class="text-xs font-bold text-gray-300">{{ comment['created-by'] }}</span>
+          <span v-if="isCollapsed" class="text-[10px] text-gray-500 italic">
+            collapsed {{ totalNestedCount > 0 ? `(${totalNestedCount} replies)` : '' }}
+          </span>
+        </div>
         <span class="text-[10px] text-gray-600">{{ new Date(comment['created-at'].timestamp).toLocaleString() }}</span>
       </div>
-      <p class="text-sm text-gray-400 whitespace-pre-wrap mb-3">{{ comment.content }}</p>
-      
-      <div class="flex items-center space-x-4">
-        <!-- Comment Likes -->
-        <LikeReactions 
-          :likes="comment.likes" 
-          :current-user-id="userId"
-          @like="handleLike"
-          @unlike="handleUnlike"
-        />
-        
-        <button 
-          v-if="isLoggedIn && depth < 5" 
-          @click="isReplying = !isReplying"
-          class="text-[10px] text-purple-400 hover:text-purple-300 transition font-medium"
-        >
-          {{ isReplying ? 'Cancel' : 'Reply' }}
-        </button>
-      </div>
 
-      <!-- Reply Input -->
-      <div v-if="isReplying" class="mt-3 flex gap-2">
-        <input 
-          v-model="replyContent"
-          type="text" 
-          placeholder="Write a reply..." 
-          class="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs text-gray-200 focus:ring-1 focus:ring-purple-500 placeholder-gray-600 outline-none"
-          @keyup.enter="submitReply"
-        />
-        <button 
-          @click="submitReply" 
-          :disabled="!replyContent.trim() || isSubmitting"
-          class="bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-medium px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed transition"
-        >
-          Post
-        </button>
+      <div v-if="!isCollapsed">
+        <p class="text-sm text-gray-400 whitespace-pre-wrap mb-3">{{ comment.content }}</p>
+        
+        <div class="flex items-center space-x-4">
+          <!-- Comment Likes -->
+          <LikeReactions 
+            :likes="comment.likes" 
+            :current-user-id="userId"
+            @like="handleLike"
+            @unlike="handleUnlike"
+          />
+          
+          <button 
+            v-if="isLoggedIn && depth < 5" 
+            @click="isReplying = !isReplying"
+            class="text-[10px] text-purple-400 hover:text-purple-300 transition font-medium"
+          >
+            {{ isReplying ? 'Cancel' : 'Reply' }}
+          </button>
+        </div>
+
+        <!-- Reply Input -->
+        <div v-if="isReplying" class="mt-3 flex gap-2">
+          <input 
+            v-model="replyContent"
+            type="text" 
+            placeholder="Write a reply..." 
+            class="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs text-gray-200 focus:ring-1 focus:ring-purple-500 placeholder-gray-600 outline-none"
+            @keyup.enter="submitReply"
+          />
+          <button 
+            @click="submitReply" 
+            :disabled="!replyContent.trim() || isSubmitting"
+            class="bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-medium px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            Post
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Nested Replies -->
-    <div v-if="childComments.length > 0" class="nested-replies">
+    <div v-if="!isCollapsed && childComments.length > 0" class="nested-replies">
       <CommentItem 
         v-for="child in childComments" 
         :key="child['comment-id']"
