@@ -81,6 +81,17 @@ export const useChatStore = defineStore('chat', () => {
         }
     }
 
+    async function deleteMessage(messageId: string) {
+        if (!activeChatId.value) return;
+        try {
+            await api.deleteChatMessage(activeChatId.value, messageId);
+            await fetchChats(); // Refresh to reflect deletion
+        } catch (e: any) {
+            error.value = e.message;
+            throw e;
+        }
+    }
+
     async function toggleLike(messageId: string, likeType: LikeType = 'like') {
         if (!activeChatId.value || !userStore.userId) return;
         const chat = activeChat.value;
@@ -164,6 +175,7 @@ export const useChatStore = defineStore('chat', () => {
         startPolling,
         stopPolling,
         sendMessage,
+        deleteMessage,
         toggleLike,
         createNewChat,
         addParticipant,

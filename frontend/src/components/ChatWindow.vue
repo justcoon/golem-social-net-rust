@@ -46,6 +46,10 @@ function handleUnlike(messageId: string) {
   chatStore.toggleLike(messageId); 
 }
 
+function handleDeleteMessage(messageId: string) {
+  chatStore.deleteMessage(messageId);
+}
+
 async function handleAddParticipant() {
     if (selectedToAdd.value.length === 0 || !activeChat.value) return;
     addParticipantError.value = null;
@@ -132,6 +136,7 @@ async function handleAddParticipant() {
           :current-user-id="userId"
           @like="(type) => handleLike(msg['message-id'], type)"
           @unlike="() => handleUnlike(msg['message-id'])"
+          @delete="() => handleDeleteMessage(msg['message-id'])"
         />
       </div>
 
