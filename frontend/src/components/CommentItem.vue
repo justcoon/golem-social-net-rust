@@ -14,6 +14,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'comment-added', newComment: Comment): void;
+  (e: 'comment-deleted', commentId: string): void;
 }>();
 
 const userStore = useUserStore();
@@ -23,6 +24,9 @@ const isCollapsed = ref(true);
 const isReplying = ref(false);
 const replyContent = ref('');
 const isSubmitting = ref(false);
+const isDeleting = ref(false);
+
+const canDelete = computed(() => userId.value === props.comment['created-by']);
 
 const childComments = computed(() => {
   return props.allComments.filter(c => c['parent-comment-id'] === props.comment['comment-id'])
@@ -44,6 +48,23 @@ function countSubReplies(commentId: string): number {
     count += countSubReplies(b['comment-id']);
   });
   return count;
+}
+
+async function handleDelete() {
+  if (!canDelete.value || isDeleting.value) return;
+  
+  if (!confirm('Are you sure you want to delete this comment?')) return;
+  
+  isDeleting.value = true;
+  try {
+    await api.deleteComment(props.postId, props.comment['comment-id']);
+    emit('comment-deleted', props.comment['comment-id']);
+  } catch (error) {
+    console.error('Failed to delete comment:', error);
+    alert('Failed to delete comment');
+  } finally {
+    isDeleting.value = false;
+  }
 }
 
 async function handleLike(type: LikeType) {
@@ -146,6 +167,14 @@ async function submitReply() {
           </span>
         </div>
         <span class="text-[10px] text-gray-600">{{ new Date(comment['created-at'].timestamp).toLocaleString() }}</span>
+        <button 
+          v-if="canDelete" 
+          @click="handleDelete" 
+          :disabled="isDeleting"
+          class="text-[10px] text-red-400 hover:text-red-300 transition font-medium ml-2"
+        >
+          {{ isDeleting ? 'Deleting...' : 'Delete' }}
+        </button>
       </div>
 
       <div v-if="!isCollapsed">
@@ -199,6 +228,7 @@ async function submitReply() {
         :post-id="postId"
         :depth="depth + 1"
         @comment-added="(nc) => emit('comment-added', nc)"
+        @comment-deleted="(id) => emit('comment-deleted', id)"
       />
     </div>
   </div>

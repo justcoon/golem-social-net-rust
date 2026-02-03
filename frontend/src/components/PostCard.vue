@@ -92,6 +92,22 @@ function handleCommentAdded(newCommentObj: Comment) {
   comments.value.push(newCommentObj);
 }
 
+function handleCommentDeleted(commentId: string) {
+  const toRemove = new Set<string>();
+  
+  function collectDescendants(id: string) {
+    toRemove.add(id);
+    comments.value.forEach(c => {
+      if (c['parent-comment-id'] === id) {
+        collectDescendants(c['comment-id']);
+      }
+    });
+  }
+  
+  collectDescendants(commentId);
+  comments.value = comments.value.filter(c => !toRemove.has(c['comment-id']));
+}
+
 async function handlePostLike(type: LikeType) {
     if (!userId.value) return;
     const uid = userId.value;
@@ -195,6 +211,7 @@ async function handlePostUnlike() {
           :post-id="localPost['post-id']"
           :depth="0"
           @comment-added="handleCommentAdded"
+          @comment-deleted="handleCommentDeleted"
         />
       </div>
 
