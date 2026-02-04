@@ -320,7 +320,8 @@ trait UserTimelineUpdatesAgent {
         &mut self,
         user_id: String,
         updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        max_wait_time: Option<u8>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>>;
 }
 
@@ -336,11 +337,12 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
         &mut self,
         user_id: String,
         updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        max_wait_time: Option<u8>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>> {
         let since = updates_since.unwrap_or(chrono::Utc::now());
-        let max_wait_time = time::Duration::from_secs(max_wait_time.unwrap_or(10) as u64);
-        let iter_wait_time = time::Duration::from_secs(1);
+        let max_wait_time = time::Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
+        let iter_wait_time = time::Duration::from_millis(iter_wait_time.unwrap_or(1000) as u64);
         let now = time::Instant::now();
         let mut done = false;
         let mut result: Option<Vec<PostRef>> = None;
