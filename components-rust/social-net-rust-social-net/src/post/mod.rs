@@ -1,6 +1,6 @@
 use crate::common::{LikeType, UserConnectionType};
 use crate::user::UserAgentClient;
-use crate::user_timeline::UserTimelineAgentClient;
+use crate::user_timeline::{PostRef, UserTimelineAgentClient};
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -57,6 +57,18 @@ impl Post {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn set_like(&mut self, user_id: String, like_type: LikeType) -> bool {
+        let res = self.likes.insert(user_id, like_type);
+        self.updated_at = chrono::Utc::now();
+        res.is_some()
+    }
+
+    fn remove_like(&mut self, user_id: String) -> bool {
+        let res = self.likes.remove(&user_id);
+        self.updated_at = chrono::Utc::now();
+        res.is_some()
     }
 
     fn add_comment(
@@ -119,6 +131,33 @@ impl Post {
             self.updated_at = chrono::Utc::now();
 
             Ok(())
+        }
+    }
+
+    fn set_comment_like(
+        &mut self,
+        comment_id: String,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<(), String> {
+        match self.comments.get_mut(&comment_id) {
+            Some(comment) => {
+                comment.likes.insert(user_id, like_type);
+                comment.updated_at = chrono::Utc::now();
+                Ok(())
+            }
+            None => Err("Comment not found".to_string()),
+        }
+    }
+
+    fn remove_comment_like(&mut self, comment_id: String, user_id: String) -> Result<(), String> {
+        match self.comments.get_mut(&comment_id) {
+            Some(comment) => {
+                comment.likes.remove(&user_id);
+                comment.updated_at = chrono::Utc::now();
+                Ok(())
+            }
+            None => Err("Comment not found".to_string()),
         }
     }
 }
@@ -195,21 +234,22 @@ impl PostAgent for PostAgentImpl {
             state.updated_at = now;
 
             // let updated = TimelinesUpdaterAgentClient::get()
-            //     .post_created(user_id.clone(), state.post_id.clone(), now)
+            //     .post_updated(user_id.clone(), state.post_id.clone(), now, now)
             //     .await;
             //
             // println!("init post - user id: {user_id}, timelines updated: {updated}");
 
             // TimelinesUpdaterAgentClient::get()
-            //     .trigger_post_created(user_id.clone(), state.post_id.clone(), now);
+            //     .trigger_post_updated(user_id.clone(), state.post_id.clone(), now, now);
 
-            TimelinesUpdaterAgentClient::new_phantom().trigger_post_created(
+            TimelinesUpdaterAgentClient::new_phantom().trigger_post_updated(
                 user_id.clone(),
                 state.post_id.clone(),
                 now,
+                now,
             );
 
-            // execute_post_created_updates(user_id, state.post_id.clone(), now).await;
+            // execute_post_updates(user_id, state.post_id.clone(), now, now).await;
             Ok(())
         }
     }
@@ -256,8 +296,7 @@ impl PostAgent for PostAgentImpl {
         } else {
             self.with_state(|state| {
                 println!("set like - user id: {}, like type: {}", user_id, like_type);
-                state.likes.insert(user_id, like_type);
-                state.updated_at = chrono::Utc::now();
+                state.set_like(user_id, like_type);
                 Ok(())
             })
         }
@@ -269,8 +308,7 @@ impl PostAgent for PostAgentImpl {
         } else {
             self.with_state(|state| {
                 println!("remove like - user id: {}", user_id);
-                state.likes.remove(&user_id);
-                state.updated_at = chrono::Utc::now();
+                state.remove_like(user_id);
                 Ok(())
             })
         }
@@ -291,14 +329,7 @@ impl PostAgent for PostAgentImpl {
                     comment_id, user_id, like_type
                 );
 
-                match state.comments.get_mut(&comment_id) {
-                    Some(comment) => {
-                        comment.likes.insert(user_id, like_type);
-                        comment.updated_at = chrono::Utc::now();
-                        Ok(())
-                    }
-                    None => Err("Comment not found".to_string()),
-                }
+                state.set_comment_like(comment_id, user_id, like_type)
             })
         }
     }
@@ -312,14 +343,7 @@ impl PostAgent for PostAgentImpl {
                     "remove comment like - comment id: {}, user id: {}",
                     comment_id, user_id
                 );
-                match state.comments.get_mut(&comment_id) {
-                    Some(comment) => {
-                        comment.likes.remove(&user_id);
-                        comment.updated_at = chrono::Utc::now();
-                        Ok(())
-                    }
-                    None => Err("Comment not found".to_string()),
-                }
+                state.remove_comment_like(comment_id, user_id)
             })
         }
     }
@@ -340,11 +364,12 @@ impl PostAgent for PostAgentImpl {
 trait TimelinesUpdaterAgent {
     fn new() -> Self;
 
-    async fn post_created(
+    async fn post_updated(
         &mut self,
         user_id: String,
         post_id: String,
         created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
     ) -> bool;
 }
 
@@ -356,31 +381,34 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         Self {}
     }
 
-    async fn post_created(
+    async fn post_updated(
         &mut self,
         user_id: String,
         post_id: String,
         created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
     ) -> bool {
-        execute_post_created_updates(user_id, post_id, created_at).await
+        execute_post_updates(user_id, post_id, created_at, updated_at).await
     }
 }
 
-async fn execute_post_created_updates(
+async fn execute_post_updates(
     user_id: String,
     post_id: String,
     created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
 ) -> bool {
     let user = UserAgentClient::get(user_id.clone()).get_user().await;
 
     if let Some(user) = user {
-        println!("post created updates - user id: {user_id}, post id: {post_id}");
-        UserTimelineAgentClient::get(user_id.clone()).trigger_add_post(
+        println!("post updates - user id: {user_id}, post id: {post_id}");
+        UserTimelineAgentClient::get(user_id.clone()).trigger_post_updated(PostRef::new(
             post_id.clone(),
             user_id.clone(),
             created_at,
             None,
-        );
+            updated_at,
+        ));
 
         let mut notify_user_ids: HashMap<String, UserConnectionType> = HashMap::new();
 
@@ -399,16 +427,17 @@ async fn execute_post_created_updates(
         }
 
         for (connected_user_id, connection_type) in notify_user_ids {
-            UserTimelineAgentClient::get(connected_user_id).trigger_add_post(
+            UserTimelineAgentClient::get(connected_user_id).trigger_post_updated(PostRef::new(
                 post_id.clone(),
                 user_id.clone(),
                 created_at,
                 Some(connection_type),
-            );
+                updated_at,
+            ));
         }
         true
     } else {
-        println!("post created updates - user id: {user_id} - not found");
+        println!("post updates - user id: {user_id} - not found");
         false
     }
 }

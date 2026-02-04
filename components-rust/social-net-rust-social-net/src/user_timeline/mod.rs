@@ -13,20 +13,23 @@ pub struct PostRef {
     pub created_by: String,
     pub created_by_connection_type: Option<UserConnectionType>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl PostRef {
-    fn new(
+    pub fn new(
         post_id: String,
         created_by: String,
         created_at: chrono::DateTime<chrono::Utc>,
         created_by_connection_type: Option<UserConnectionType>,
+        updated_at: chrono::DateTime<chrono::Utc>,
     ) -> Self {
         PostRef {
             post_id,
             created_by,
             created_by_connection_type,
             created_at,
+            updated_at,
         }
     }
 }
@@ -40,26 +43,18 @@ pub struct UserTimeline {
 }
 
 impl UserTimeline {
-    fn contains_post(&self, post_id: String) -> bool {
-        self.posts.iter().any(|p| p.post_id == post_id)
-    }
+    fn add_or_update_post(&mut self, post: PostRef) {
+        let updated_at = post.updated_at;
 
-    fn add_post(
-        &mut self,
-        post_id: String,
-        created_by: String,
-        created_at: chrono::DateTime<chrono::Utc>,
-        created_by_connection_type: Option<UserConnectionType>,
-    ) {
-        self.posts.push(PostRef::new(
-            post_id,
-            created_by,
-            created_at,
-            created_by_connection_type,
-        ));
+        self.posts.retain(|p| p.post_id != post.post_id);
+        self.posts.push(post);
+
         self.posts
             .sort_by(|a, b| a.created_at.cmp(&b.created_at).reverse());
-        self.updated_at = chrono::Utc::now();
+
+        if self.updated_at < updated_at {
+            self.updated_at = updated_at;
+        }
     }
 }
 
@@ -87,13 +82,7 @@ trait UserTimelineAgent {
 
     fn get_timeline(&self) -> Option<UserTimeline>;
 
-    fn add_post(
-        &mut self,
-        post_id: String,
-        created_by: String,
-        created_at: chrono::DateTime<chrono::Utc>,
-        by_connection_type: Option<UserConnectionType>,
-    ) -> Result<(), String>;
+    fn post_updated(&mut self, post: PostRef) -> Result<(), String>;
 
     fn get_updates(
         &self,
@@ -140,7 +129,7 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
             let updates = state
                 .posts
                 .iter()
-                .filter(|p| p.created_at > updates_since)
+                .filter(|p| p.updated_at > updates_since)
                 .cloned()
                 .collect();
 
@@ -153,19 +142,14 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         }
     }
 
-    fn add_post(
-        &mut self,
-        post_id: String,
-        created_by: String,
-        created_at: chrono::DateTime<chrono::Utc>,
-        by_connection_type: Option<UserConnectionType>,
-    ) -> Result<(), String> {
+    fn post_updated(&mut self, post: PostRef) -> Result<(), String> {
         self.with_state(|state| {
-            println!("add post - id: {post_id}, created by: {created_by}");
+            println!(
+                "post_updated - id: {}, created by: {}, updated at: {}",
+                post.post_id, post.created_by, post.updated_at
+            );
 
-            if !state.contains_post(post_id.clone()) {
-                state.add_post(post_id, created_by, created_at, by_connection_type);
-            }
+            state.add_or_update_post(post);
 
             Ok(())
         })

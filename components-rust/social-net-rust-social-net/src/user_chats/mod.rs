@@ -146,7 +146,6 @@ impl UserChatsAgent for UserChatsAgentImpl {
                 Err("Chat created by current user".to_string())
             } else {
                 if !state.chats.iter().any(|c| c.chat_id == chat_id) {
-
                     println!("add chat - id: {chat_id}");
 
                     state.chats.push(ChatRef {
@@ -171,7 +170,6 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.with_state(
             |state| match state.chats.iter_mut().find(|m| m.chat_id == chat_id) {
                 Some(chat) => {
-
                     println!("chat updated - id: {chat_id}");
                     chat.updated_at = updated_at;
                     if state.updated_at < updated_at {
