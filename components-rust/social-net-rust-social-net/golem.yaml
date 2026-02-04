@@ -126,7 +126,7 @@ httpApi:
               let id: string = request.path.user-id;
               let since: string = request.query.since;
               let agent = user-chats-updates-agent();
-              let result = agent.get-chats-updates(id, some({timestamp: since}), none);
+              let result = agent.get-chats-updates(id, some({timestamp: since}), none, none);
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: GET
           path: /v1/social-net/users/{user-id}/timeline/posts?{query}
@@ -148,7 +148,7 @@ httpApi:
               let id: string = request.path.user-id;
               let since: string = request.query.since;
               let agent = user-timeline-updates-agent();
-              let result = agent.get-posts-updates(id, some({timestamp: since}), none);
+              let result = agent.get-posts-updates(id, some({timestamp: since}), none, none);
               match result {  some(x) => {status: 200u64, body: ok(x) }, none => {status: 404u64, body: err({message: "not found"})} }
         - method: PUT
           path: /v1/social-net/users/{user-id}/connections

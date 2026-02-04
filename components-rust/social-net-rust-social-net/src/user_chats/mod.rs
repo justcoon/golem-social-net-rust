@@ -146,7 +146,6 @@ impl UserChatsAgent for UserChatsAgentImpl {
                 Err("Chat created by current user".to_string())
             } else {
                 if !state.chats.iter().any(|c| c.chat_id == chat_id) {
-
                     println!("add chat - id: {chat_id}");
 
                     state.chats.push(ChatRef {
@@ -171,7 +170,6 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.with_state(
             |state| match state.chats.iter_mut().find(|m| m.chat_id == chat_id) {
                 Some(chat) => {
-
                     println!("chat updated - id: {chat_id}");
                     chat.updated_at = updated_at;
                     if state.updated_at < updated_at {
@@ -345,7 +343,8 @@ trait UserChatsUpdatesAgent {
         &mut self,
         user_id: String,
         updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        max_wait_time: Option<u8>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>>;
 }
 
@@ -361,11 +360,12 @@ impl UserChatsUpdatesAgent for UserChatsUpdatesAgentImpl {
         &mut self,
         user_id: String,
         updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        max_wait_time: Option<u8>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>> {
         let since = updates_since.unwrap_or(chrono::Utc::now());
-        let max_wait_time = time::Duration::from_secs(max_wait_time.unwrap_or(10) as u64);
-        let iter_wait_time = time::Duration::from_secs(1);
+        let max_wait_time = time::Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
+        let iter_wait_time = time::Duration::from_millis(iter_wait_time.unwrap_or(500) as u64);
         let now = time::Instant::now();
         let mut done = false;
         let mut result: Option<Vec<ChatRef>> = None;
