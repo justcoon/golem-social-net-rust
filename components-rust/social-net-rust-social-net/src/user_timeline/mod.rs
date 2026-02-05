@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::{thread, time};
 
+// max number of posts in timeline
+const POSTS_MAX_COUNT: usize = 500;
+
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct PostRef {
     pub post_id: String,
@@ -50,7 +53,12 @@ impl UserTimeline {
         self.posts.push(post);
 
         self.posts
-            .sort_by(|a, b| a.created_at.cmp(&b.created_at).reverse());
+            .sort_by(|a, b| a.updated_at.cmp(&b.updated_at).reverse());
+
+        // Keep only the first POSTS_MAX_COUNT elements
+        if self.posts.len() > POSTS_MAX_COUNT {
+            self.posts.truncate(POSTS_MAX_COUNT);
+        }
 
         if self.updated_at < updated_at {
             self.updated_at = updated_at;

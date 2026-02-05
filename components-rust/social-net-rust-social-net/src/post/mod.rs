@@ -1,13 +1,12 @@
 use crate::common::{LikeType, UserConnectionType};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
-use chrono::Timelike;
-use golem_rust::golem_wasm::wasi::clocks::wall_clock::Datetime;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-const MAX_COMMENT_LENGTH: usize = 2000;
+// max number of comments
+const COMMENTS_MAX_COUNT: usize = 2000;
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct Comment {
@@ -264,7 +263,7 @@ impl PostAgent for PostAgentImpl {
                     content,
                     parent_comment_id.clone().unwrap_or("N/A".to_string())
                 );
-                if state.comments.len() >= MAX_COMMENT_LENGTH {
+                if state.comments.len() >= COMMENTS_MAX_COUNT {
                     Err("Max comment length".to_string())
                 } else {
                     let comment_id =
@@ -413,6 +412,21 @@ trait TimelinesUpdaterAgent {
 struct TimelinesUpdaterAgentImpl {
     state: PostUpdates,
 }
+impl TimelinesUpdaterAgentImpl {
+    async fn execute_posts_updates(&mut self) {
+        if !self.state.updates.is_empty() {
+            execute_post_updates(self.state.user_id.clone(), self.state.updates.clone()).await;
+            self.state.updates.clear();
+            self.state.updated_at = chrono::Utc::now();
+        }
+    }
+
+    fn add_update(&mut self, update: PostUpdate) {
+        self.state.updates.retain(|x| x.post_id != update.post_id);
+        self.state.updates.push(update);
+        self.state.updated_at = chrono::Utc::now();
+    }
+}
 
 #[agent_implementation]
 impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
@@ -427,7 +441,12 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
     }
 
     async fn post_updated(&mut self, update: PostUpdate, process_immediately: bool) {
-        self.state.updates.push(update);
+        println!(
+            "post updates - user id: {}, post id: {}",
+            self.state.user_id.clone(),
+            update.post_id.clone()
+        );
+        self.add_update(update);
 
         if process_immediately {
             println!(
@@ -435,34 +454,7 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
                 self.state.user_id.clone(),
                 self.state.updates.len()
             );
-            execute_post_updates(self.state.user_id.clone(), self.state.updates.clone()).await;
-            self.state.updates.clear();
-            self.state.updated_at = chrono::Utc::now();
-        } else {
-            let now = chrono::Utc::now();
-
-            // nearest minute
-            let schedule_time = now
-                .with_second(0)
-                .and_then(|dt| dt.with_nanosecond(0))
-                .unwrap_or(chrono::Utc::now())
-                + chrono::Duration::minutes(1);
-
-            println!(
-                "post updates - user id: {}, updates: {} - scheduling: {}",
-                self.state.user_id.clone(),
-                self.state.updates.len(),
-                schedule_time
-            );
-
-            let seconds = schedule_time.timestamp() as u64;
-            let nanoseconds = schedule_time.timestamp_subsec_nanos();
-
-            TimelinesUpdaterAgentClient::get(self.state.user_id.clone())
-                .schedule_process_posts_updates(Datetime {
-                    seconds,
-                    nanoseconds,
-                })
+            self.execute_posts_updates().await;
         }
     }
 
@@ -472,9 +464,7 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
             self.state.user_id.clone(),
             self.state.updates.len()
         );
-        execute_post_updates(self.state.user_id.clone(), self.state.updates.clone()).await;
-        self.state.updates.clear();
-        self.state.updated_at = chrono::Utc::now();
+        self.execute_posts_updates().await;
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
