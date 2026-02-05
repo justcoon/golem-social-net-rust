@@ -4,6 +4,7 @@ use crate::post::{Post, PostAgentClient};
 use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::{thread, time};
 
@@ -46,11 +47,11 @@ pub struct UserTimeline {
 }
 
 impl UserTimeline {
-    fn add_or_update_post(&mut self, post: PostRef) {
-        let updated_at = post.updated_at;
+    fn add_or_update_posts(&mut self, posts: Vec<PostRef>) {
+        let ids: HashSet<String> = posts.iter().map(|p| p.post_id.clone()).collect();
 
-        self.posts.retain(|p| p.post_id != post.post_id);
-        self.posts.push(post);
+        self.posts.retain(|p| !ids.contains(&p.post_id));
+        self.posts.extend(posts);
 
         self.posts
             .sort_by(|a, b| a.updated_at.cmp(&b.updated_at).reverse());
@@ -60,9 +61,7 @@ impl UserTimeline {
             self.posts.truncate(POSTS_MAX_COUNT);
         }
 
-        if self.updated_at < updated_at {
-            self.updated_at = updated_at;
-        }
+        self.updated_at = chrono::Utc::now();
     }
 }
 
@@ -90,7 +89,7 @@ trait UserTimelineAgent {
 
     fn get_timeline(&self) -> Option<UserTimeline>;
 
-    fn post_updated(&mut self, post: PostRef) -> Result<(), String>;
+    fn posts_updated(&mut self, posts: Vec<PostRef>) -> Result<(), String>;
 
     fn get_updates(
         &self,
@@ -150,15 +149,10 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         }
     }
 
-    fn post_updated(&mut self, post: PostRef) -> Result<(), String> {
+    fn posts_updated(&mut self, posts: Vec<PostRef>) -> Result<(), String> {
         self.with_state(|state| {
-            println!(
-                "post_updated - id: {}, created by: {}, updated at: {}",
-                post.post_id, post.created_by, post.updated_at
-            );
-
-            state.add_or_update_post(post);
-
+            println!("posts updated - count: {}", posts.len());
+            state.add_or_update_posts(posts);
             Ok(())
         })
     }

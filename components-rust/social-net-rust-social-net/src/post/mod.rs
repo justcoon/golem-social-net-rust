@@ -234,14 +234,8 @@ impl PostAgent for PostAgentImpl {
             state.created_at = now;
             state.updated_at = now;
 
-            TimelinesUpdaterAgentClient::get(user_id.clone()).trigger_post_updated(
-                PostUpdate {
-                    post_id: state.post_id.clone(),
-                    created_at: now,
-                    updated_at: now,
-                },
-                true,
-            );
+            TimelinesUpdaterAgentClient::get(user_id.clone())
+                .trigger_post_updated(PostUpdate::from(state), true);
 
             Ok(())
         }
@@ -268,14 +262,8 @@ impl PostAgent for PostAgentImpl {
                 } else {
                     let comment_id =
                         state.add_comment(user_id.clone(), content, parent_comment_id)?;
-                    // TimelinesUpdaterAgentClient::get(user_id.clone()).trigger_post_updated(
-                    //     PostUpdate {
-                    //         post_id: state.post_id.clone(),
-                    //         created_at: state.created_at,
-                    //         updated_at: state.updated_at,
-                    //     },
-                    //     false,
-                    // );
+                    TimelinesUpdaterAgentClient::get(user_id.clone())
+                        .trigger_post_updated(PostUpdate::from(state), false);
                     Ok(comment_id)
                 }
             })
@@ -289,14 +277,8 @@ impl PostAgent for PostAgentImpl {
             self.with_state(|state| {
                 println!("remove comment - comment id: {}", comment_id);
                 state.remove_comment(comment_id)?;
-                // TimelinesUpdaterAgentClient::get(state.created_by.clone()).trigger_post_updated(
-                //     PostUpdate {
-                //         post_id: state.post_id.clone(),
-                //         created_at: state.created_at,
-                //         updated_at: state.updated_at,
-                //     },
-                //     false,
-                // );
+                TimelinesUpdaterAgentClient::get(state.created_by.clone())
+                    .trigger_post_updated(PostUpdate::from(state), false);
                 Ok(())
             })
         }
@@ -378,6 +360,16 @@ pub struct PostUpdate {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+impl PostUpdate {
+    fn from(value: &Post) -> Self {
+        PostUpdate {
+            post_id: value.post_id.clone(),
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct PostUpdates {
     pub user_id: String,
@@ -415,7 +407,7 @@ struct TimelinesUpdaterAgentImpl {
 impl TimelinesUpdaterAgentImpl {
     async fn execute_posts_updates(&mut self) {
         if !self.state.updates.is_empty() {
-            execute_post_updates(self.state.user_id.clone(), self.state.updates.clone()).await;
+            execute_posts_updates(self.state.user_id.clone(), self.state.updates.clone()).await;
             self.state.updates.clear();
             self.state.updated_at = chrono::Utc::now();
         }
@@ -478,7 +470,7 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
     }
 }
 
-async fn execute_post_updates(user_id: String, updates: Vec<PostUpdate>) -> bool {
+async fn execute_posts_updates(user_id: String, updates: Vec<PostUpdate>) -> bool {
     let user = UserAgentClient::get(user_id.clone()).get_user().await;
 
     if let Some(user) = user {
@@ -498,41 +490,55 @@ async fn execute_post_updates(user_id: String, updates: Vec<PostUpdate>) -> bool
             }
         }
 
-        for update in updates {
-            println!(
-                "post updates - user id: {}, post id: {}",
-                user_id.clone(),
-                update.post_id
-            );
-            execute_post_update(user_id.clone(), update, notify_user_ids.clone());
-        }
+        println!(
+            "posts updates - user id: {user_id} - updates: {}, notify users: {}",
+            updates.len(),
+            notify_user_ids.len()
+        );
+        execute_posts_update(user_id.clone(), updates, notify_user_ids.clone());
+
         true
     } else {
-        println!("post updates - user id: {user_id} - not found");
+        println!("posts updates - user id: {user_id} - not found");
         false
     }
 }
 
-fn execute_post_update(
+fn execute_posts_update(
     user_id: String,
-    update: PostUpdate,
+    updates: Vec<PostUpdate>,
     notify_user_ids: HashMap<String, UserConnectionType>,
 ) {
-    UserTimelineAgentClient::get(user_id.clone()).trigger_post_updated(PostRef::new(
-        update.post_id.clone(),
-        user_id.clone(),
-        update.created_at,
-        None,
-        update.updated_at,
-    ));
+    let user_updates = updates
+        .clone()
+        .into_iter()
+        .map(|update| {
+            PostRef::new(
+                update.post_id.clone(),
+                user_id.clone(),
+                update.created_at,
+                None,
+                update.updated_at,
+            )
+        })
+        .collect();
+
+    UserTimelineAgentClient::get(user_id.clone()).trigger_posts_updated(user_updates);
 
     for (connected_user_id, connection_type) in notify_user_ids {
-        UserTimelineAgentClient::get(connected_user_id).trigger_post_updated(PostRef::new(
-            update.post_id.clone(),
-            user_id.clone(),
-            update.created_at,
-            Some(connection_type),
-            update.updated_at,
-        ));
+        let user_updates = updates
+            .clone()
+            .into_iter()
+            .map(|update| {
+                PostRef::new(
+                    update.post_id.clone(),
+                    user_id.clone(),
+                    update.created_at,
+                    Some(connection_type.clone()),
+                    update.updated_at,
+                )
+            })
+            .collect();
+        UserTimelineAgentClient::get(connected_user_id).trigger_posts_updated(user_updates);
     }
 }
