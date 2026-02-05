@@ -29,6 +29,11 @@ The application follows a granular agent-based architecture, where different asp
 - **User Chats View Agent**: Aggregates full chat content for a user by querying multiple Chat Agents.
 - **User Chats Updates Agent**: Implements a long-polling mechanism to provide real-time notification of new messages or chats.
 
+### Frontend
+The application includes a web-based frontend built with Vue 3, TypeScript, Vite, and Tailwind CSS.
+
+For detailed information on how to set up, build, and run the frontend, including its backend proxy configuration, please refer to the [Frontend README](./frontend/README.md).
+
 ### Key Features
 - **RESTful API** for all social net operations
 - **Stateful Agents** with Golem Cloud managing the state
