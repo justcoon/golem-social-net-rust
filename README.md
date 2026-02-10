@@ -15,7 +15,7 @@ The application follows a granular agent-based architecture, where different asp
 #### Stateful Agents (Persistent)
 - **User Agent**: Manages user profile information (name, email) and maintains a list of connections (friends and followers).
 - **Post Agent**: Manages the lifecycle of an individual post, including its content, likes, and a hierarchical comment system.
-- **User Post Agent**: Maintains a registry of all posts created by a specific user.
+- **User Posts Agent**: Maintains a registry of all posts created by a specific user.
 - **User Timeline Agent**: Stores references to posts that should appear in a user's personal timeline.
 - **Timelines Updater Agent**: Orchestrates the distribution of new posts to the timelines of the author and their connections.
 - **Chat Agent**: Manages a single chat room, its participants, and its message history (including likes).
