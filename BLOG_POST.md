@@ -36,85 +36,186 @@ The system manages interactions through a mix of direct RPC calls and event-driv
 
 ## Agent Design
 
-Let's look at how these agents are defined in Rust. We use Golem's Rust SDK to define the behavior and state of our agents.
+The system's logic is distributed across several specialized agents. Here is a complete breakdown of every agent type in the application.
 
-### 1. The User Agent
+### 1. Core Entity Agents
 
-The `User Agent` is the digital twin of a user. It holds their profile data and connection graph (friends/followers).
+These agents represent the primary domain entities.
+
+#### User Agent
+The **User Agent** is the persistent identity of a user. It stores profile data and manages the list of connections (friends and followers).
 
 ```rust
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct User {
-    pub user_id: String,
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub connected_users: HashMap<String, ConnectedUser>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
 #[agent_definition]
 trait UserAgent {
     fn new(id: String) -> Self;
-
     fn get_user(&self) -> Option<User>;
-
     fn set_name(&mut self, name: Option<String>) -> Result<(), String>;
-
-    fn connect_user(
-        &mut self,
-        user_id: String,
-        connection_type: UserConnectionType,
-    ) -> Result<(), String>;
-
-    // ... disconnect_user, etc.
+    fn connect_user(&mut self, user_id: String, connection_type: UserConnectionType) -> Result<(), String>;
+    // ... disconnect, etc.
 }
 ```
 
-Notice `get_user` simply returns `self.state.clone()`. There is no SQL query. The state is right there in memory.
-
-### 2. The Post Agent
-
-The `Post Agent` manages a single piece of content. It handles its own likes and comments. Interestingly, `Post Agent` is also responsible for triggering the updates that eventually propagate to timelines.
+#### Post Agent
+The **Post Agent** manages the lifecycle of a single post, including its content, likes, and a tree of comments. It is also responsible for triggering events when its state changes.
 
 ```rust
 #[agent_definition]
 trait PostAgent {
     fn new(id: String) -> Self;
-
     fn get_post(&self) -> Option<Post>;
-
+    // Initializes the post and triggers the TimelinesUpdaterAgent
     async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
-
-    fn add_comment(
-        &mut self,
-        user_id: String,
-        content: String,
-        parent_comment_id: Option<String>,
-    ) -> Result<String, String>;
-
+    fn add_comment(&mut self, user_id: String, content: String, parent_comment_id: Option<String>) -> Result<String, String>;
     fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String>;
 }
 ```
 
-When `init_post` is called, it not only initializes the state but also notifies the `TimelinesUpdaterAgent` to start the distribution process.
+#### Chat Agent
+The **Chat Agent** handles a single chat room. It stores the message history and participation list, ensuring real-time consistency for all participants.
 
-### 3. The Timelines Updater Agent (Orchestrator)
+```rust
+#[agent_definition]
+trait ChatAgent {
+    fn new(id: String) -> Self;
+    fn get_chat(&self) -> Option<Chat>;
+    fn add_message(&mut self, user_id: String, content: String) -> Result<String, String>;
+    fn add_participants(&mut self, participants_ids: HashSet<String>) -> Result<(), String>;
+}
+```
 
-This agent acts as a background worker. It buffers updates and processes them to avoid blocking the user interaction.
+### 2. Collection & Registry Agents
+
+These stateful agents manage collections of references, linking core entities together.
+
+#### User Posts Agent
+This agent acts as a registry for all posts created by a specific user. It generates unique IDs for new posts and delegates the actual creation to a fresh `Post Agent`.
+
+```rust
+#[agent_definition]
+trait UserPostsAgent {
+    fn new(id: String) -> Self;
+    fn get_posts(&self) -> Option<UserPosts>;
+    // Generates ID, calls PostAgent::init_post, and stores the reference
+    fn create_post(&mut self, content: String) -> Result<String, String>;
+}
+```
+
+#### User Timeline Agent
+This agent maintains the personal timeline for a user. It stores references (`PostRef`) to posts from friends and followed users. It receives updates via the fan-out mechanism.
+
+```rust
+#[agent_definition]
+trait UserTimelineAgent {
+    fn new(id: String) -> Self;
+    fn get_timeline(&self) -> Option<UserTimeline>;
+    // Called by the fan-out process
+    fn posts_updated(&mut self, posts: Vec<PostRef>) -> Result<(), String>;
+}
+```
+
+#### User Chats Agent
+Similar to `User Posts Agent`, this registry tracks all chat rooms a user is a participant in.
+
+```rust
+#[agent_definition]
+trait UserChatsAgent {
+    fn new(id: String) -> Self;
+    fn get_chats(&self) -> Option<UserChats>;
+    fn create_chat(&mut self, participants_ids: HashSet<String>) -> Result<String, String>;
+    // Called when the user is added to an existing chat
+    fn add_chat(&mut self, chat_id: String, created_by: String, created_at: chrono::DateTime<chrono::Utc>) -> Result<(), String>;
+}
+```
+
+### 3. Orchestration & Updates Agents
+
+These agents handle background processing and real-time updates.
+
+#### Timelines Updater Agent
+This is the "fan-out" worker. When a post is created, this agent determines who needs to see it and pushes the update to their respective `User Timeline Agents`.
 
 ```rust
 #[agent_definition]
 trait TimelinesUpdaterAgent {
     fn new(id: String) -> Self;
-
-    fn get_updates(&self) -> PostUpdates;
-
-    // Called by Post Agent
     async fn post_updated(&mut self, update: PostUpdate, process_immediately: bool);
-
-    // Processes the buffer and fans out to followers
     async fn process_posts_updates(&mut self);
+}
+```
+
+#### User Timeline Updates Agent (Ephemeral)
+This ephemeral agent implements a **long-polling** mechanism. It checks the `User Timeline Agent` for any changes since a specific timestamp, allowing the frontend to receive real-time updates without constant refreshing.
+
+```rust
+#[agent_definition(mode = "ephemeral")]
+trait UserTimelineUpdatesAgent {
+    fn new() -> Self;
+    async fn get_posts_updates(
+        &mut self, 
+        user_id: String, 
+        updates_since: Option<chrono::DateTime<chrono::Utc>>, 
+        // ... wait params
+    ) -> Option<Vec<PostRef>>;
+}
+```
+
+#### User Chats Updates Agent (Ephemeral)
+Similar to the timeline updater, this agent provides long-polling for the user's chat list.
+
+```rust
+#[agent_definition(mode = "ephemeral")]
+trait UserChatsUpdatesAgent {
+    fn new() -> Self;
+    async fn get_chats_updates(/* ... */) -> Option<Vec<ChatRef>>;
+}
+```
+
+### 4. View & Discovery Agents (Ephemeral)
+
+These agents are stateless aggregators. They query multiple stateful agents in parallel to build complete views for the frontend.
+
+#### User Search Agent
+This agent leverages Golem's platform capabilities to scan the network for `User Agents` that match a specific name or criteria.
+
+```rust
+#[agent_definition(mode = "ephemeral")]
+trait UserSearchAgent {
+    fn new() -> Self;
+    async fn search(&self, query: String) -> Result<Vec<User>, String>;
+}
+```
+
+#### User Posts View Agent
+It aggregates data by getting a list of post IDs from `User Posts Agent` and then fetching full content from each `Post Agent` in parallel.
+
+```rust
+#[agent_definition(mode = "ephemeral")]
+trait UserPostsViewAgent {
+    fn new() -> Self;
+    async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
+}
+```
+
+#### User Timeline View Agent
+Similar to the posts view, but aggregates the user's timeline.
+
+```rust
+#[agent_definition(mode = "ephemeral")]
+trait UserTimelineViewAgent {
+    fn new() -> Self;
+    async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
+}
+```
+
+#### User Chats View Agent
+Aggregates full chat states for the user's chat list.
+
+```rust
+#[agent_definition(mode = "ephemeral")]
+trait UserChatsViewAgent {
+    fn new() -> Self;
+    async fn get_chats_view(&mut self, user_id: String, query: String) -> Option<Vec<Chat>>;
 }
 ```
 
