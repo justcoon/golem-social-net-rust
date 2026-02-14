@@ -135,7 +135,9 @@ fn create_post(&mut self, content: String) -> Result<String, String> {
         PostAgentClient::get(post_id.clone())
             .trigger_init_post(state.user_id.clone(), content);
 
-        state.posts.push(PostRef::new(post_id.clone()));
+        let post_ref = PostRef::new(post_id.clone());
+        state.updated_at = post_ref.created_at;
+        state.posts.push(post_ref);
 
         Ok(post_id)
     })
@@ -341,7 +343,7 @@ trait UserPostsViewAgent {
 }
 ```
 
-This agent illustrates the power of the "scatter-gather" pattern in Golem. It is getting a list of post IDs from `User Posts Agent`, then spawns parallel requests to fetch the actual data:
+This agent illustrates the power of the "scatter-gather" pattern in Golem. It initially retrieves the complete list of post IDs from the `User Posts Agent` and subsequently launches parallel requests to fetch the actual post data:
 
 ```rust
 async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {

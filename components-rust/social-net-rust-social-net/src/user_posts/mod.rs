@@ -87,6 +87,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
 
             PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
 
+            state.updated_at = post_ref.created_at;
             state.posts.push(post_ref);
 
             Ok(post_id)
