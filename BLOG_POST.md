@@ -71,6 +71,17 @@ trait PostAgent {
 }
 ```
 
+Here we can see how the `Post Agent` proactively notifies the `TimelinesUpdaterAgent` upon creation:
+
+```rust
+async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String> {
+    // ... setup state ...
+    TimelinesUpdaterAgentClient::get(user_id.clone())
+        .trigger_post_updated(PostUpdate::from(state), true);
+    // ...
+}
+```
+
 #### Chat Agent
 The **Chat Agent** handles a single chat room. It stores the message history and participation list, ensuring real-time consistency for all participants.
 
@@ -81,6 +92,21 @@ trait ChatAgent {
     fn get_chat(&self) -> Option<Chat>;
     fn add_message(&mut self, user_id: String, content: String) -> Result<String, String>;
     fn add_participants(&mut self, participants_ids: HashSet<String>) -> Result<(), String>;
+}
+```
+
+When a message is added, the `Chat Agent` iterates through all participants and updates their individual `UserChatsAgent` registries, ensuring their chat lists move to the top:
+
+```rust
+fn execute_chat_updates(
+    chat_id: String,
+    participants_ids: HashSet<String>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+) {
+    for p_id in participants_ids {
+        UserChatsAgentClient::get(p_id.clone())
+            .trigger_chat_updated(chat_id.clone(), updated_at);
+    }
 }
 ```
 
@@ -160,8 +186,44 @@ trait UserTimelineUpdatesAgent {
 }
 ```
 
+The implementation shows how the agent loops and waits for data, providing a "server-push" like experience over standard HTTP:
+
+```rust
+async fn get_posts_updates(
+    &mut self,
+    user_id: String,
+    updates_since: Option<chrono::DateTime<chrono::Utc>>,
+    iter_wait_time: Option<u32>,
+    max_wait_time: Option<u32>,
+) -> Option<Vec<PostRef>> {
+    // ... setup times ...
+    while !done {
+        // Poll the stateful agent
+        let res = UserTimelineAgentClient::get(user_id.clone())
+            .get_updates(since)
+            .await;
+
+        if let Some(updates) = res {
+            if !updates.posts.is_empty() {
+                result = Some(updates.posts);
+                done = true;
+            } else {
+                // Wait before next check
+                result = Some(vec![]);
+                done = now.elapsed() >= max_wait_time;
+                if !done {
+                    thread::sleep(iter_wait_time);
+                }
+            }
+        } 
+        // ...
+    }
+    result
+}
+```
+
 #### User Chats Updates Agent (Ephemeral)
-Similar to the timeline updater, this agent provides long-polling for the user's chat list.
+Similar to the timeline updater, this agent provides long-polling for the user's chat list, ensuring they see new conversations immediately.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
