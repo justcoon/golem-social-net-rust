@@ -24,14 +24,14 @@ The system is composed of a constellation of agents, split into two main categor
 
 ### Communication Flow
 
-The system manages interactions through a mix of direct RPC calls and event-driven patterns:
+The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations:
 
 1.  **Request Entry**: The **API Gateway** receives REST requests and routes them to the specific agent (e.g., `GET /users/{id}` -> `User Agent {id}`).
 2.  **Discovery**: A **User Search Agent** scans the network to discover specific `User Agents` matching a query.
 3.  **Fan-out Distribution**: When a user creates a post:
     *   The **User Posts Agent** initializes a new **Post Agent**.
-    *   The **Post Agent** triggers a "Post Created" event.
-    *   A **Timelines Updater Agent** catches this event, looks up the author's followers, and "fans out" the post reference to their personal **User Timeline Agents**.
+    *   The **Post Agent** asynchronously invokes the **Timelines Updater Agent**. This is a durable, guaranteed operation.
+    *   The **Timelines Updater Agent** looks up the author's followers and "fans out" the post reference to their personal **User Timeline Agents**.
 4.  **View Aggregation**: To show a timeline, a **User Timeline View Agent** queries the `User Timeline Agent` for a list of post IDs, then fetches the actual content from multiple `Post Agents` in parallel, constructing a complete view.
 
 ## Agent Design
@@ -57,7 +57,7 @@ trait UserAgent {
 ```
 
 #### Post Agent
-The **Post Agent** manages the lifecycle of a single post, including its content, likes, and a tree of comments. It is also responsible for triggering events when its state changes.
+The **Post Agent** manages the lifecycle of a single post, including its content, likes, and a tree of comments. It is also responsible for triggering updates when its state changes.
 
 ```rust
 #[agent_definition]
@@ -207,7 +207,7 @@ trait TimelinesUpdaterAgent {
 }
 ```
 
-The `post_updated` method receives the event. If `process_immediately` is true, it triggers the fan-out right away. Otherwise, it buffers the update.
+The `post_updated` method receives the update. If `process_immediately` is true, it triggers the fan-out right away. Otherwise, it buffers the update.
 
 ```rust
  async fn post_updated(&mut self, update: PostUpdate, process_immediately: bool) {
@@ -386,7 +386,7 @@ async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec
 ```
 
 #### User Timeline View Agent
-Similar to the posts view, but aggregates the user's timeline.
+This agent is similar to the **User Posts View Agent**, but it aggregates the user's timeline.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
@@ -397,7 +397,7 @@ trait UserTimelineViewAgent {
 ```
 
 #### User Chats View Agent
-Aggregates full chat states for the user's chat list.
+This agent aggregates full chat states for the user's chat list.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]

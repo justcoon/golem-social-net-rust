@@ -40,7 +40,7 @@ For detailed information on how to set up, build, and run the frontend, includin
 - **Distributed Agent System** with clear responsibility boundaries
 
 ### Communication Flow
-The system manages interactions through several distinct flow patterns:
+The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations, similar to the **Actor Model's** "tell" pattern (fire-and-forget). Golem guarantees the delivery and processing of these calls:
 
 1. **Request Entry & Routing**:
    - The **API Gateway** acts as the entry point, receiving HTTP REST requests from the frontend.
@@ -52,12 +52,12 @@ The system manages interactions through several distinct flow patterns:
 
 3. **Content Aggregation (Materialized Views)**:
    - **View Agents** (User Posts View, User Timeline View) handle complex read operations.
-   - They first retrieve a list of post references (IDs and timestamps) from stateful registry agents (**User Post Agent** or **User Timeline Agent**).
+   - They first retrieve a list of post references (IDs and timestamps) from stateful registry agents (**User Posts Agent** or **User Timeline Agent**).
    - They then resolve these references by fetching full content, likes, and comments from multiple **Post Agents** in parallel.
 
-4. **Event-Driven Post Distribution (Fan-out)**:
-   - When a **Post Agent** is initialized (created), it triggers a "Post Created" event.
-   - The **Timelines Updater Agent** receives this event and identifies the author's connections via the **User Agent**.
+4. **Asynchronous Post Distribution (Fan-out)**:
+   - When a **Post Agent** is initialized, it asynchronously invokes the **Timelines Updater Agent**. This is a durable, guaranteed operation.
+   - The **Timelines Updater Agent** receives the updates and identifies the author's connections via the **User Agent**.
    - It then performs a fan-out broadcast, adding the post reference to the **User Timeline Agent** of every follower and friend.
 
 5. **Real-time Synchronization**:
@@ -66,7 +66,7 @@ The system manages interactions through several distinct flow patterns:
 
 6. **Private Messaging & Group Chats**:
    - When a user initiates a chat, a **User Chats Agent** (stateful) initializes a new **Chat Agent**.
-   - The **Chat Agent** handles all messages and reactions, and notifies the **User Chats Agent** of every participant whenever an update occurs.
+   - The **Chat Agent** handles all messages and reactions, and notifies the **User Chats Agent** for each participant whenever an update occurs.
    - Read operations are optimized through the **User Chats View Agent**, which handles parallel resolution of chat metadata and content.
 
 ### State Management
