@@ -70,7 +70,7 @@ trait PostAgent {
 }
 ```
 
-Here we can see how the `Post Agent` proactively notifies the `TimelinesUpdaterAgent` upon creation:
+Here we can see how the `Post Agent` proactively notifies the `Timelines Updater Agent` upon creation:
 
 ```rust
 async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String> {
@@ -82,7 +82,7 @@ async fn init_post(&mut self, user_id: String, content: String) -> Result<(), St
 ```
 
 #### Chat Agent
-The **Chat Agent** handles a single chat room. It stores the message history and participation list, ensuring real-time consistency for all participants.
+The **Chat Agent** handles a single chat room. It stores the message history and participation list.
 
 ```rust
 #[agent_definition]
@@ -94,7 +94,7 @@ trait ChatAgent {
 }
 ```
 
-When a message is added, the `Chat Agent` iterates through all participants and updates their individual `UserChatsAgent` registries, ensuring their chat lists move to the top:
+When a message is added, the `Chat Agent` iterates through all participants and updates their individual `User Chats Agent` registries, ensuring their chat lists move to the top:
 
 ```rust
 fn execute_chat_updates(
@@ -164,7 +164,6 @@ trait UserChatsAgent {
     fn new(id: String) -> Self;
     fn get_chats(&self) -> Option<UserChats>;
     fn create_chat(&mut self, participants_ids: HashSet<String>) -> Result<String, String>;
-    // Called when the user is added to an existing chat
     fn add_chat(&mut self, chat_id: String, created_by: String, created_at: chrono::DateTime<chrono::Utc>) -> Result<(), String>;
 }
 ```
@@ -206,6 +205,46 @@ trait TimelinesUpdaterAgent {
 }
 ```
 
+The `post_updated` method receives the event. If `process_immediately` is true, it triggers the fan-out right away. Otherwise, it buffers the update.
+
+```rust
+ async fn post_updated(&mut self, update: PostUpdate, process_immediately: bool) {
+    self.add_update(update);
+
+    if process_immediately {
+        self.execute_posts_updates().await;
+    }
+}
+```
+
+The `execute_posts_updates` (helper function) demonstrates the logic of finding followers and pushing data to them:
+
+```rust
+async fn execute_posts_updates(user_id: String, updates: Vec<PostUpdate>) -> bool {
+    // 1. Fetch the author's profile to get connections
+    let user = UserAgentClient::get(user_id.clone()).get_user().await;
+
+    if let Some(user) = user {
+        // 2. Identify followers and friends
+        let mut notify_user_ids: HashMap<String, UserConnectionType> = HashMap::new();
+        // ... filter connected_users ...
+
+        // 3. Push updates to each follower's timeline
+        for (connected_user_id, connection_type) in notify_user_ids {
+            let user_updates = updates.clone().into_iter().map(|update| {
+                 // ... create PostRef ...
+            }).collect();
+            
+            UserTimelineAgentClient::get(connected_user_id)
+                .trigger_posts_updated(user_updates);
+        }
+        true
+    } else {
+        false
+    }
+}
+```
+
 #### User Timeline Updates Agent (Ephemeral)
 This ephemeral agent implements a **long-polling** mechanism. It checks the `User Timeline Agent` for any changes since a specific timestamp, allowing the frontend to receive real-time updates without constant refreshing.
 
@@ -214,10 +253,11 @@ This ephemeral agent implements a **long-polling** mechanism. It checks the `Use
 trait UserTimelineUpdatesAgent {
     fn new() -> Self;
     async fn get_posts_updates(
-        &mut self, 
-        user_id: String, 
-        updates_since: Option<chrono::DateTime<chrono::Utc>>, 
-        // ... wait params
+        &mut self,
+        user_id: String,
+        updates_since: Option<chrono::DateTime<chrono::Utc>>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>>;
 }
 ```
@@ -265,7 +305,13 @@ Similar to the timeline updater, this agent provides long-polling for the user's
 #[agent_definition(mode = "ephemeral")]
 trait UserChatsUpdatesAgent {
     fn new() -> Self;
-    async fn get_chats_updates(/* ... */) -> Option<Vec<ChatRef>>;
+    async fn get_chats_updates(
+        &mut self,
+        user_id: String,
+        updates_since: Option<chrono::DateTime<chrono::Utc>>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
+    ) -> Option<Vec<ChatRef>>;
 }
 ```
 
@@ -295,29 +341,45 @@ trait UserPostsViewAgent {
 }
 ```
 
-This agent illustrates the power of the "scatter-gather" pattern in Golem. It first consults the registry, then spawns parallel requests to fetch the actual data:
+This agent illustrates the power of the "scatter-gather" pattern in Golem. It is getting a list of post IDs from `User Posts Agent`, then spawns parallel requests to fetch the actual data:
 
 ```rust
 async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
-    // 1. Get the list of post IDs
-    let user_posts = UserPostsAgentClient::get(user_id.clone()).get_posts().await?;
+    let user_posts = UserPostsAgentClient::get(user_id.clone()).get_posts().await;
 
-    // 2. Create clients for every post
-    let clients = user_posts.posts.iter()
-        .map(|p| PostAgentClient::get(p.post_id.clone()))
-        .collect::<Vec<_>>();
+    if let Some(user_posts) = user_posts {
+        let query_matcher = PostQueryMatcher::new(&query);
+        let user_posts = user_posts.posts;
+        
+        if user_posts.is_empty() {
+            Some(vec![])
+        } else {
+            let mut result: Vec<Post> = vec![];
 
-    // 3. Fetch all posts in parallel
-    let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
-    let responses = join_all(tasks).await;
+            for chunk in user_posts.chunks(10) {
+                let clients = chunk
+                    .iter()
+                    .map(|p| PostAgentClient::get(p.post_id.clone()))
+                    .collect::<Vec<_>>();
 
-    // 4. Filter and return
-    let result: Vec<Post> = responses.into_iter()
-        .flatten()
-        .filter(|p| query_matcher.matches_post(p.clone()))
-        .collect();
+                let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
 
-    Some(result)
+                let responses = join_all(tasks).await;
+
+                let chunk_result: Vec<Post> = responses
+                    .into_iter()
+                    .flatten()
+                    .filter(|p| query_matcher.matches_post(p.clone()))
+                    .collect();
+
+                result.extend(chunk_result);
+            }
+
+            Some(result)
+        }
+    } else {
+        None
+    }
 }
 ```
 
