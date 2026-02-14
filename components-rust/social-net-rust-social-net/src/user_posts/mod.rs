@@ -194,20 +194,26 @@ impl UserPostsViewAgent for UserPostsViewAgentImpl {
             if user_posts.is_empty() {
                 Some(vec![])
             } else {
-                let clients = user_posts
-                    .iter()
-                    .map(|p| PostAgentClient::get(p.post_id.clone()))
-                    .collect::<Vec<_>>();
+                let mut result: Vec<Post> = vec![];
 
-                let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
+                for chunk in user_posts.chunks(10) {
+                    let clients = chunk
+                        .iter()
+                        .map(|p| PostAgentClient::get(p.post_id.clone()))
+                        .collect::<Vec<_>>();
 
-                let responses = join_all(tasks).await;
+                    let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
 
-                let result: Vec<Post> = responses
-                    .into_iter()
-                    .flatten()
-                    .filter(|p| query_matcher.matches_post(p.clone()))
-                    .collect();
+                    let responses = join_all(tasks).await;
+
+                    let chunk_result: Vec<Post> = responses
+                        .into_iter()
+                        .flatten()
+                        .filter(|p| query_matcher.matches_post(p.clone()))
+                        .collect();
+
+                    result.extend(chunk_result);
+                }
 
                 Some(result)
             }
