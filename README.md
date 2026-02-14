@@ -40,7 +40,7 @@ For detailed information on how to set up, build, and run the frontend, includin
 - **Distributed Agent System** with clear responsibility boundaries
 
 ### Communication Flow
-The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations, similar to the **Actor Model's** "tell" pattern (fire-and-forget). Golem guarantees the delivery and processing of these calls:
+The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations:
 
 1. **Request Entry & Routing**:
    - The **API Gateway** acts as the entry point, receiving HTTP REST requests from the frontend.
