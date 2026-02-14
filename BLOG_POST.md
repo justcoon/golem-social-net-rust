@@ -64,7 +64,6 @@ The **Post Agent** manages the lifecycle of a single post, including its content
 trait PostAgent {
     fn new(id: String) -> Self;
     fn get_post(&self) -> Option<Post>;
-    // Initializes the post and triggers the TimelinesUpdaterAgent
     async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
     fn add_comment(&mut self, user_id: String, content: String, parent_comment_id: Option<String>) -> Result<String, String>;
     fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String>;
@@ -122,8 +121,24 @@ This agent acts as a registry for all posts created by a specific user. It gener
 trait UserPostsAgent {
     fn new(id: String) -> Self;
     fn get_posts(&self) -> Option<UserPosts>;
-    // Generates ID, calls PostAgent::init_post, and stores the reference
     fn create_post(&mut self, content: String) -> Result<String, String>;
+}
+```
+
+The `create_post` function demonstrates how distinct agents are orchestrated. It generates an ID, initializes a specific `Post Agent`, and then stores the reference locally:
+
+```rust
+fn create_post(&mut self, content: String) -> Result<String, String> {
+    self.with_state(|state| {
+        let post_id = uuid::Uuid::new_v4().to_string();
+
+        PostAgentClient::get(post_id.clone())
+            .trigger_init_post(state.user_id.clone(), content);
+
+        state.posts.push(PostRef::new(post_id.clone()));
+
+        Ok(post_id)
+    })
 }
 ```
 
@@ -151,6 +166,27 @@ trait UserChatsAgent {
     fn create_chat(&mut self, participants_ids: HashSet<String>) -> Result<String, String>;
     // Called when the user is added to an existing chat
     fn add_chat(&mut self, chat_id: String, created_by: String, created_at: chrono::DateTime<chrono::Utc>) -> Result<(), String>;
+}
+```
+
+Triggering a new chat involves a similar pattern: creating the ID, initializing the dedicated `Chat Agent` with participants, and updating the local list.
+
+```rust
+fn create_chat(&mut self, participants_ids: HashSet<String>) -> Result<String, String> {
+    self.with_state(|state| {
+        // ... validation ...
+        let chat_id = uuid::Uuid::new_v4().to_string();
+
+        ChatAgentClient::get(chat_id.clone()).trigger_init_chat(
+            participants_ids,
+            state.user_id.clone(),
+            created_at,
+        );
+
+        state.chats.push(ChatRef::new(chat_id.clone()));
+        // ...
+        Ok(chat_id)
+    })
 }
 ```
 
@@ -256,6 +292,32 @@ It aggregates data by getting a list of post IDs from `User Posts Agent` and the
 trait UserPostsViewAgent {
     fn new() -> Self;
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
+}
+```
+
+This agent illustrates the power of the "scatter-gather" pattern in Golem. It first consults the registry, then spawns parallel requests to fetch the actual data:
+
+```rust
+async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
+    // 1. Get the list of post IDs
+    let user_posts = UserPostsAgentClient::get(user_id.clone()).get_posts().await?;
+
+    // 2. Create clients for every post
+    let clients = user_posts.posts.iter()
+        .map(|p| PostAgentClient::get(p.post_id.clone()))
+        .collect::<Vec<_>>();
+
+    // 3. Fetch all posts in parallel
+    let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
+    let responses = join_all(tasks).await;
+
+    // 4. Filter and return
+    let result: Vec<Post> = responses.into_iter()
+        .flatten()
+        .filter(|p| query_matcher.matches_post(p.clone()))
+        .collect();
+
+    Some(result)
 }
 ```
 
