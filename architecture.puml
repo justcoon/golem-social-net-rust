@@ -23,7 +23,7 @@ package "Golem Cloud" {
     package "Stateful Agents (Persistent)" {
         [User Agent] as user STATEFUL
         [Post Agent] as post STATEFUL
-        [User Post Agent] as user_posts STATEFUL
+        [User Posts Agent] as user_posts STATEFUL
         [User Timeline Agent] as user_timeline STATEFUL
         [Timelines Updater Agent] as timeline_updater STATEFUL
         [Chat Agent] as chat STATEFUL

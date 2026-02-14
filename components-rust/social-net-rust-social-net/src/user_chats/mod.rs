@@ -312,20 +312,25 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
             if user_chats.is_empty() {
                 Some(vec![])
             } else {
-                let clients = user_chats
-                    .iter()
-                    .map(|p| ChatAgentClient::get(p.chat_id.clone()))
-                    .collect::<Vec<_>>();
+                let mut result: Vec<Chat> = vec![];
+                for chunk in user_chats.chunks(10) {
+                    let clients = chunk
+                        .iter()
+                        .map(|p| ChatAgentClient::get(p.chat_id.clone()))
+                        .collect::<Vec<_>>();
 
-                let tasks: Vec<_> = clients.iter().map(|client| client.get_chat()).collect();
+                    let tasks: Vec<_> = clients.iter().map(|client| client.get_chat()).collect();
 
-                let responses = join_all(tasks).await;
+                    let responses = join_all(tasks).await;
 
-                let result: Vec<Chat> = responses
-                    .into_iter()
-                    .flatten()
-                    .filter(|p| query_matcher.matches_chat(p.clone()))
-                    .collect();
+                    let chunk_result: Vec<Chat> = responses
+                        .into_iter()
+                        .flatten()
+                        .filter(|p| query_matcher.matches_chat(p.clone()))
+                        .collect();
+
+                    result.extend(chunk_result);
+                }
 
                 Some(result)
             }
