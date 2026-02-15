@@ -1,6 +1,8 @@
-use crate::common::{LikeType, UserConnectionType};
+use crate::common::query::Query;
+use crate::common::{query, LikeType, UserConnectionType};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
+use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -541,4 +543,61 @@ fn execute_posts_update(
             .collect();
         UserTimelineAgentClient::get(connected_user_id).trigger_posts_updated(user_updates);
     }
+}
+
+pub async fn fetch_posts_by_ids(post_ids: &[String]) -> Vec<Post> {
+    let mut result: Vec<Post> = vec![];
+
+    for chunk in post_ids.chunks(10) {
+        let clients = chunk
+            .iter()
+            .map(|post_id| PostAgentClient::get(post_id.clone()))
+            .collect::<Vec<_>>();
+
+        let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
+        let responses = join_all(tasks).await;
+
+        let chunk_result: Vec<Post> = responses.into_iter().flatten().collect();
+
+        result.extend(chunk_result);
+    }
+
+    result
+}
+
+// Check if a post matches the query
+pub fn matches_post(post: Post, query: Query) -> bool {
+    // Check field filters first
+    for (field, value) in query.field_filters.iter() {
+        let matches = match field.as_str() {
+            "created-by" | "createdby" => query::text_exact_matches(&post.created_by, value),
+            "content" => query::text_matches(&post.content, value),
+            "connection-type" | "connectiontype" => true,
+            "comments" => post
+                .comments
+                .iter()
+                .any(|(_, c)| query::text_matches(&c.content, value)),
+            _ => false, // Unknown field
+        };
+
+        if !matches {
+            return false;
+        }
+    }
+
+    // If no terms to match, just check if field filters passed
+    if query.terms.is_empty() {
+        return true;
+    }
+
+    // Check search terms against all searchable fields
+    for term in query.terms.iter() {
+        let matches = query::text_matches(&post.content, term);
+
+        if !matches {
+            return false;
+        }
+    }
+
+    true
 }

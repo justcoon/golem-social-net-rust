@@ -59,6 +59,7 @@ impl Display for LikeType {
 }
 
 pub(crate) mod query {
+    use std::fmt::{Display, Formatter};
 
     pub fn opt_text_matches(text: Option<String>, query: &str) -> bool {
         query == "*" || text.is_some_and(|text| text.to_lowercase().contains(&query.to_lowercase()))
@@ -110,6 +111,16 @@ pub(crate) mod query {
     pub struct Query {
         pub terms: Vec<String>,
         pub field_filters: Vec<(String, String)>,
+    }
+
+    impl Display for Query {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "Query(terms: {:?}, field_filters: {:?})",
+                self.terms, self.field_filters
+            )
+        }
     }
 
     impl Query {
