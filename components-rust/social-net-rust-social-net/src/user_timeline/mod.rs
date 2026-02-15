@@ -255,14 +255,13 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
                 .posts
                 .into_iter()
                 .filter(|p| query_matcher.matches_post_ref(p.clone()))
+                .map(|p| p.post_id)
                 .collect::<Vec<_>>();
 
             if timeline_posts.is_empty() {
                 Some(vec![])
             } else {
-                let post_ids: Vec<String> =
-                    timeline_posts.iter().map(|p| p.post_id.clone()).collect();
-                let posts = fetch_posts_by_ids(&post_ids).await;
+                let posts = fetch_posts_by_ids(&timeline_posts).await;
 
                 let filtered_posts: Vec<Post> = posts
                     .into_iter()

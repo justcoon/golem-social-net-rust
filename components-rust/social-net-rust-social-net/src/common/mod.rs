@@ -112,6 +112,7 @@ pub(crate) mod query {
         pub terms: Vec<String>,
         pub field_filters: Vec<(String, String)>,
     }
+
     impl Display for Query {
         fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
             write!(
