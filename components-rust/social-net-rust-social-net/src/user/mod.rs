@@ -233,24 +233,20 @@ impl UserAgent for UserAgentImpl {
 
 #[derive(Clone, Debug)]
 struct UserQueryMatcher {
-    terms: Vec<String>,
-    field_filters: Vec<(String, String)>,
+    query: query::Query,
 }
 
 impl UserQueryMatcher {
     fn new(query: &str) -> Self {
         let q = query::Query::new(query);
 
-        Self {
-            terms: q.terms,
-            field_filters: q.field_filters,
-        }
+        Self { query: q }
     }
 
     // Check if a user matches the query
     fn matches(&self, user: User) -> bool {
         // Check field filters first
-        for (field, value) in self.field_filters.iter() {
+        for (field, value) in self.query.field_filters.iter() {
             let matches = match field.to_lowercase().as_str() {
                 "user-id" | "userid" => query::text_exact_matches(&user.user_id, value),
                 "name" => query::opt_text_matches(user.name.clone(), value),
@@ -264,12 +260,12 @@ impl UserQueryMatcher {
         }
 
         // If no terms to match, just check if field filters passed
-        if self.terms.is_empty() {
+        if self.query.terms.is_empty() {
             return true;
         }
 
         // Check search terms against all searchable fields
-        for term in self.terms.iter() {
+        for term in self.query.terms.iter() {
             let matches = query::text_matches(&user.user_id, term)
                 || query::opt_text_matches(user.name.clone(), term)
                 || query::opt_text_matches(user.email.clone(), term);

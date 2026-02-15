@@ -1,6 +1,5 @@
-use crate::chat::{Chat, ChatAgentClient};
+use crate::chat::{fetch_chats_by_ids, Chat, ChatAgentClient};
 use crate::common::query;
-use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -287,6 +286,12 @@ trait UserChatsViewAgent {
     fn new() -> Self;
 
     async fn get_chats_view(&mut self, user_id: String, query: String) -> Option<Vec<Chat>>;
+
+    async fn get_chats_updates_view(
+        &mut self,
+        user_id: String,
+        updates_since: chrono::DateTime<chrono::Utc>,
+    ) -> Option<Vec<Chat>>;
 }
 
 struct UserChatsViewAgentImpl {}
@@ -312,27 +317,45 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
             if user_chats.is_empty() {
                 Some(vec![])
             } else {
-                let mut result: Vec<Chat> = vec![];
-                for chunk in user_chats.chunks(10) {
-                    let clients = chunk
-                        .iter()
-                        .map(|p| ChatAgentClient::get(p.chat_id.clone()))
-                        .collect::<Vec<_>>();
+                let chat_ids: Vec<String> = user_chats.iter().map(|p| p.chat_id.clone()).collect();
+                let chats = fetch_chats_by_ids(&chat_ids).await;
 
-                    let tasks: Vec<_> = clients.iter().map(|client| client.get_chat()).collect();
+                let filtered_chats: Vec<Chat> = chats
+                    .into_iter()
+                    .filter(|p| query_matcher.matches_chat(p.clone()))
+                    .collect();
 
-                    let responses = join_all(tasks).await;
+                Some(filtered_chats)
+            }
+        } else {
+            None
+        }
+    }
 
-                    let chunk_result: Vec<Chat> = responses
-                        .into_iter()
-                        .flatten()
-                        .filter(|p| query_matcher.matches_chat(p.clone()))
-                        .collect();
+    async fn get_chats_updates_view(
+        &mut self,
+        user_id: String,
+        updates_since: chrono::DateTime<chrono::Utc>,
+    ) -> Option<Vec<Chat>> {
+        let user_chats_updates = UserChatsAgentClient::get(user_id.clone())
+            .get_updates(updates_since)
+            .await;
 
-                    result.extend(chunk_result);
-                }
+        println!("get chats updates view - user id: {user_id}, updates since: {updates_since}");
 
-                Some(result)
+        if let Some(user_chats_updates) = user_chats_updates {
+            let updated_chat_refs = user_chats_updates.chats;
+
+            if updated_chat_refs.is_empty() {
+                Some(vec![])
+            } else {
+                let chat_ids: Vec<String> = updated_chat_refs
+                    .iter()
+                    .map(|p| p.chat_id.clone())
+                    .collect();
+                let chats = fetch_chats_by_ids(&chat_ids).await;
+
+                Some(chats)
             }
         } else {
             None

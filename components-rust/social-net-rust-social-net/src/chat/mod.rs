@@ -1,5 +1,6 @@
 use crate::common::LikeType;
 use crate::user_chats::UserChatsAgentClient;
+use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -372,4 +373,24 @@ fn execute_add_chat(
             );
         }
     }
+}
+
+pub async fn fetch_chats_by_ids(chat_ids: &[String]) -> Vec<Chat> {
+    let mut result: Vec<Chat> = vec![];
+
+    for chunk in chat_ids.chunks(10) {
+        let clients = chunk
+            .iter()
+            .map(|chat_id| ChatAgentClient::get(chat_id.clone()))
+            .collect::<Vec<_>>();
+
+        let tasks: Vec<_> = clients.iter().map(|client| client.get_chat()).collect();
+        let responses = join_all(tasks).await;
+
+        let chunk_result: Vec<Chat> = responses.into_iter().flatten().collect();
+
+        result.extend(chunk_result);
+    }
+
+    result
 }
