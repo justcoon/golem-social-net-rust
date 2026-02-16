@@ -1,10 +1,9 @@
 use crate::chat::{fetch_chats_by_ids, Chat, ChatAgentClient};
-use crate::common::query;
+use crate::common::{poll_for_updates, query};
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
-use std::{thread, time};
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ChatRef {
@@ -391,41 +390,18 @@ impl UserChatsUpdatesAgent for UserChatsUpdatesAgentImpl {
         iter_wait_time: Option<u32>,
         max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>> {
-        let since = updates_since.unwrap_or(chrono::Utc::now());
-        let max_wait_time = time::Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
-        let iter_wait_time = time::Duration::from_millis(iter_wait_time.unwrap_or(500) as u64);
-        let now = time::Instant::now();
-        let mut done = false;
-        let mut result: Option<Vec<ChatRef>> = None;
+        poll_for_updates(
+            user_id,
+            updates_since,
+            iter_wait_time,
+            max_wait_time,
+            |uid, since| async move {
+                let res = UserChatsAgentClient::get(uid).get_updates(since).await;
 
-        while !done {
-            println!(
-                "get chats updates - user id: {}, updates since: {}, elapsed time: {}ms, max wait time: {}ms",
-                user_id,
-                since,
-                now.elapsed().as_millis(),
-                max_wait_time.as_millis()
-            );
-            let res = UserChatsAgentClient::get(user_id.clone())
-                .get_updates(since)
-                .await;
-
-            if let Some(updates) = res {
-                if !updates.chats.is_empty() {
-                    result = Some(updates.chats);
-                    done = true;
-                } else {
-                    result = Some(vec![]);
-                    done = now.elapsed() >= max_wait_time;
-                    if !done {
-                        thread::sleep(iter_wait_time);
-                    }
-                }
-            } else {
-                result = None;
-                done = true;
-            }
-        }
-        result
+                res.map(|r| r.chats)
+            },
+            "get chats updates",
+        )
+        .await
     }
 }

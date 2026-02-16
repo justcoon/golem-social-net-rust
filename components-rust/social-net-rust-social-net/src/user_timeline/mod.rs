@@ -1,11 +1,10 @@
-use crate::common::query;
 use crate::common::UserConnectionType;
+use crate::common::{poll_for_updates, query};
 use crate::post::{fetch_posts_by_ids, matches_post, Post};
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
-use std::{thread, time};
 
 // max number of posts in timeline
 const POSTS_MAX_COUNT: usize = 500;
@@ -334,41 +333,17 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
         iter_wait_time: Option<u32>,
         max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>> {
-        let since = updates_since.unwrap_or(chrono::Utc::now());
-        let max_wait_time = time::Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
-        let iter_wait_time = time::Duration::from_millis(iter_wait_time.unwrap_or(1000) as u64);
-        let now = time::Instant::now();
-        let mut done = false;
-        let mut result: Option<Vec<PostRef>> = None;
-
-        while !done {
-            println!(
-                "get posts updates - user id: {}, updates since: {}, elapsed time: {}ms, max wait time: {}ms",
-                user_id,
-                since,
-                now.elapsed().as_millis(),
-                max_wait_time.as_millis()
-            );
-            let res = UserTimelineAgentClient::get(user_id.clone())
-                .get_updates(since)
-                .await;
-
-            if let Some(updates) = res {
-                if !updates.posts.is_empty() {
-                    result = Some(updates.posts);
-                    done = true;
-                } else {
-                    result = Some(vec![]);
-                    done = now.elapsed() >= max_wait_time;
-                    if !done {
-                        thread::sleep(iter_wait_time);
-                    }
-                }
-            } else {
-                result = None;
-                done = true;
-            }
-        }
-        result
+        poll_for_updates(
+            user_id,
+            updates_since,
+            iter_wait_time,
+            max_wait_time,
+            |uid, since| async move {
+                let res = UserTimelineAgentClient::get(uid).get_updates(since).await;
+                res.map(|r| r.posts)
+            },
+            "get posts updates",
+        )
+        .await
     }
 }

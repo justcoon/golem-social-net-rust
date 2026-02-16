@@ -102,11 +102,13 @@ impl Chat {
             .find(|m| m.message_id == message_id)
         {
             Some(msg) => {
-                msg.likes.remove(&user_id);
-                let now = chrono::Utc::now();
-                msg.updated_at = now;
-                self.updated_at = now;
-                true
+                let removed = msg.likes.remove(&user_id).is_some();
+                if removed {
+                    let now = chrono::Utc::now();
+                    msg.updated_at = now;
+                    self.updated_at = now;
+                }
+                removed
             }
             None => false,
         }
@@ -393,4 +395,291 @@ pub async fn fetch_chats_by_ids(chat_ids: &[String]) -> Vec<Chat> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::LikeType;
+
+    fn create_test_chat() -> Chat {
+        let mut chat = Chat::new("test-chat-1".to_string());
+        chat.created_by = "user1".to_string();
+        chat.participants.insert("user1".to_string());
+        chat.participants.insert("user2".to_string());
+        chat
+    }
+
+    #[test]
+    fn test_chat_new() {
+        let chat = Chat::new("test-chat".to_string());
+        assert_eq!(chat.chat_id, "test-chat");
+        assert_eq!(chat.created_by, "");
+        assert!(chat.participants.is_empty());
+        assert!(chat.messages.is_empty());
+        assert_eq!(chat.created_at, chat.updated_at);
+    }
+
+    #[test]
+    fn test_add_message() {
+        let mut chat = create_test_chat();
+        let initial_updated_at = chat.updated_at;
+
+        // Add first message
+        let message_id1 = chat.add_message("user1".to_string(), "Hello world".to_string());
+
+        assert_eq!(chat.messages.len(), 1);
+        assert_eq!(chat.messages[0].message_id, message_id1);
+        assert_eq!(chat.messages[0].content, "Hello world");
+        assert_eq!(chat.messages[0].created_by, "user1");
+        assert!(chat.messages[0].likes.is_empty());
+        assert!(chat.updated_at > initial_updated_at);
+
+        // Add second message
+        let message_id2 = chat.add_message("user2".to_string(), "Hi there".to_string());
+
+        assert_eq!(chat.messages.len(), 2);
+        assert_eq!(chat.messages[1].message_id, message_id2);
+        assert_eq!(chat.messages[1].content, "Hi there");
+        assert_eq!(chat.messages[1].created_by, "user2");
+        assert_ne!(message_id1, message_id2);
+    }
+
+    #[test]
+    fn test_remove_message_success() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+        let initial_updated_at = chat.updated_at;
+
+        // Remove existing message
+        let result = chat.remove_message(message_id.clone());
+
+        assert!(result);
+        assert_eq!(chat.messages.len(), 0);
+        assert!(chat.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_message_not_found() {
+        let mut chat = create_test_chat();
+        let initial_updated_at = chat.updated_at;
+
+        // Try to remove non-existent message
+        let result = chat.remove_message("non-existent-id".to_string());
+
+        assert!(!result);
+        assert_eq!(chat.messages.len(), 0);
+        assert_eq!(chat.updated_at, initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_message_from_multiple() {
+        let mut chat = create_test_chat();
+        let message_id1 = chat.add_message("user1".to_string(), "Message 1".to_string());
+        let message_id2 = chat.add_message("user2".to_string(), "Message 2".to_string());
+        let message_id3 = chat.add_message("user1".to_string(), "Message 3".to_string());
+
+        assert_eq!(chat.messages.len(), 3);
+
+        // Remove middle message
+        let result = chat.remove_message(message_id2.clone());
+
+        assert!(result);
+        assert_eq!(chat.messages.len(), 2);
+        assert_eq!(chat.messages[0].message_id, message_id1);
+        assert_eq!(chat.messages[1].message_id, message_id3);
+    }
+
+    #[test]
+    fn test_set_message_like_success() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+        let initial_updated_at = chat.updated_at;
+
+        // Add a like
+        let result = chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Like);
+
+        assert!(result);
+        assert_eq!(chat.messages[0].likes.len(), 1);
+        assert_eq!(chat.messages[0].likes.get("user2"), Some(&LikeType::Like));
+        assert!(chat.messages[0].updated_at > initial_updated_at);
+        assert!(chat.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_set_message_like_not_found() {
+        let mut chat = create_test_chat();
+        let initial_updated_at = chat.updated_at;
+
+        // Try to like non-existent message
+        let result = chat.set_message_like(
+            "non-existent-id".to_string(),
+            "user2".to_string(),
+            LikeType::Like,
+        );
+
+        assert!(!result);
+        assert_eq!(chat.messages.len(), 0);
+        assert_eq!(chat.updated_at, initial_updated_at);
+    }
+
+    #[test]
+    fn test_set_multiple_likes() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+
+        // Add multiple likes from different users
+        let result1 =
+            chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Like);
+        let result2 =
+            chat.set_message_like(message_id.clone(), "user3".to_string(), LikeType::Love);
+
+        assert!(result1);
+        assert!(result2);
+        assert_eq!(chat.messages[0].likes.len(), 2);
+        assert_eq!(chat.messages[0].likes.get("user2"), Some(&LikeType::Like));
+        assert_eq!(chat.messages[0].likes.get("user3"), Some(&LikeType::Love));
+    }
+
+    #[test]
+    fn test_override_like() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+
+        // Add initial like
+        let result1 =
+            chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Like);
+
+        // Override with different like type
+        let result2 =
+            chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Love);
+
+        assert!(result1);
+        assert!(result2);
+        assert_eq!(chat.messages[0].likes.len(), 1);
+        assert_eq!(chat.messages[0].likes.get("user2"), Some(&LikeType::Love));
+    }
+
+    #[test]
+    fn test_remove_message_like_success() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+
+        // Add a like first
+        chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Like);
+        assert_eq!(chat.messages[0].likes.len(), 1);
+
+        let initial_updated_at = chat.updated_at;
+
+        // Remove the like
+        let result = chat.remove_message_like(message_id.clone(), "user2".to_string());
+
+        assert!(result);
+        assert_eq!(chat.messages[0].likes.len(), 0);
+        assert!(chat.messages[0].updated_at > initial_updated_at);
+        assert!(chat.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_message_like_not_found() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+        let initial_updated_at = chat.updated_at;
+
+        // Try to remove like from non-existent message
+        let result1 = chat.remove_message_like("non-existent-id".to_string(), "user2".to_string());
+
+        // Try to remove non-existent like from existing message
+        let result2 = chat.remove_message_like(message_id.clone(), "user2".to_string());
+
+        assert!(!result1);
+        assert!(!result2);
+        assert_eq!(chat.messages[0].likes.len(), 0);
+        assert_eq!(chat.updated_at, initial_updated_at);
+    }
+
+    #[test]
+    fn test_message_new() {
+        let message = Message::new("user1".to_string(), "Test content".to_string());
+
+        assert!(!message.message_id.is_empty());
+        assert_eq!(message.content, "Test content");
+        assert_eq!(message.created_by, "user1");
+        assert!(message.likes.is_empty());
+        assert_eq!(message.created_at, message.updated_at);
+
+        // Test that message_id is a valid UUID
+        uuid::Uuid::parse_str(&message.message_id).unwrap();
+    }
+
+    #[test]
+    fn test_like_operations_integration() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+
+        // Add multiple likes
+        assert!(chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Like));
+        assert!(chat.set_message_like(message_id.clone(), "user3".to_string(), LikeType::Love));
+        assert!(chat.set_message_like(
+            message_id.clone(),
+            "user4".to_string(),
+            LikeType::Insightful
+        ));
+
+        assert_eq!(chat.messages[0].likes.len(), 3);
+
+        // Remove one like
+        assert!(chat.remove_message_like(message_id.clone(), "user3".to_string()));
+
+        assert_eq!(chat.messages[0].likes.len(), 2);
+        assert_eq!(chat.messages[0].likes.get("user2"), Some(&LikeType::Like));
+        assert_eq!(
+            chat.messages[0].likes.get("user4"),
+            Some(&LikeType::Insightful)
+        );
+        assert!(chat.messages[0].likes.get("user3").is_none());
+
+        // Override remaining like
+        assert!(chat.set_message_like(message_id.clone(), "user2".to_string(), LikeType::Dislike));
+
+        assert_eq!(chat.messages[0].likes.len(), 2);
+        assert_eq!(
+            chat.messages[0].likes.get("user2"),
+            Some(&LikeType::Dislike)
+        );
+        assert_eq!(
+            chat.messages[0].likes.get("user4"),
+            Some(&LikeType::Insightful)
+        );
+    }
+
+    #[test]
+    fn test_all_like_types() {
+        let mut chat = create_test_chat();
+        let message_id = chat.add_message("user1".to_string(), "Test message".to_string());
+
+        let like_types = vec![
+            LikeType::Like,
+            LikeType::Love,
+            LikeType::Insightful,
+            LikeType::Dislike,
+        ];
+
+        for (i, like_type) in like_types.iter().enumerate() {
+            let user_id = format!("user{}", i + 2);
+            assert!(chat.set_message_like(message_id.clone(), user_id, like_type.clone()));
+        }
+
+        assert_eq!(chat.messages[0].likes.len(), 4);
+        assert_eq!(chat.messages[0].likes.get("user2"), Some(&LikeType::Like));
+        assert_eq!(chat.messages[0].likes.get("user3"), Some(&LikeType::Love));
+        assert_eq!(
+            chat.messages[0].likes.get("user4"),
+            Some(&LikeType::Insightful)
+        );
+        assert_eq!(
+            chat.messages[0].likes.get("user5"),
+            Some(&LikeType::Dislike)
+        );
+    }
 }

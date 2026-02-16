@@ -70,7 +70,9 @@ impl Post {
 
     fn remove_like(&mut self, user_id: String) -> bool {
         let res = self.likes.remove(&user_id);
-        self.updated_at = chrono::Utc::now();
+        if res.is_some() {
+            self.updated_at = chrono::Utc::now();
+        }
         res.is_some()
     }
 
@@ -156,8 +158,10 @@ impl Post {
     fn remove_comment_like(&mut self, comment_id: String, user_id: String) -> Result<(), String> {
         match self.comments.get_mut(&comment_id) {
             Some(comment) => {
-                comment.likes.remove(&user_id);
-                comment.updated_at = chrono::Utc::now();
+                let removed = comment.likes.remove(&user_id).is_some();
+                if removed {
+                    comment.updated_at = chrono::Utc::now();
+                }
                 Ok(())
             }
             None => Err("Comment not found".to_string()),
@@ -600,4 +604,564 @@ pub fn matches_post(post: Post, query: Query) -> bool {
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::LikeType;
+
+    fn create_test_post() -> Post {
+        let mut post = Post::new("test-post-1".to_string());
+        post.created_by = "user1".to_string();
+        post.content = "Test post content".to_string();
+        post
+    }
+
+    #[test]
+    fn test_post_new() {
+        let post = Post::new("test-post".to_string());
+        assert_eq!(post.post_id, "test-post");
+        assert_eq!(post.content, "");
+        assert_eq!(post.created_by, "");
+        assert!(post.likes.is_empty());
+        assert!(post.comments.is_empty());
+        assert_eq!(post.created_at, post.updated_at);
+    }
+
+    #[test]
+    fn test_set_like_new_user() {
+        let mut post = create_test_post();
+        let initial_updated_at = post.updated_at;
+
+        let result = post.set_like("user2".to_string(), LikeType::Like);
+
+        assert!(!result); // First time like, returns false (no previous like)
+        assert_eq!(post.likes.len(), 1);
+        assert_eq!(post.likes.get("user2"), Some(&LikeType::Like));
+        assert!(post.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_set_like_override_existing() {
+        let mut post = create_test_post();
+
+        // Add initial like
+        post.set_like("user2".to_string(), LikeType::Like);
+        let initial_updated_at = post.updated_at;
+
+        // Override with different like type
+        let result = post.set_like("user2".to_string(), LikeType::Love);
+
+        assert!(result); // Override, returns true (previous like existed)
+        assert_eq!(post.likes.len(), 1);
+        assert_eq!(post.likes.get("user2"), Some(&LikeType::Love));
+        assert!(post.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_like_success() {
+        let mut post = create_test_post();
+
+        // Add a like first
+        post.set_like("user2".to_string(), LikeType::Like);
+        assert_eq!(post.likes.len(), 1);
+
+        let initial_updated_at = post.updated_at;
+
+        // Remove the like
+        let result = post.remove_like("user2".to_string());
+
+        assert!(result);
+        assert_eq!(post.likes.len(), 0);
+        assert!(post.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_like_not_found() {
+        let mut post = create_test_post();
+        let initial_updated_at = post.updated_at;
+
+        // Try to remove non-existent like
+        let result = post.remove_like("user2".to_string());
+
+        assert!(!result);
+        assert_eq!(post.likes.len(), 0);
+        assert_eq!(post.updated_at, initial_updated_at);
+    }
+
+    #[test]
+    fn test_add_comment_success() {
+        let mut post = create_test_post();
+        let initial_updated_at = post.updated_at;
+
+        // Add root comment
+        let result = post.add_comment("user2".to_string(), "Great post!".to_string(), None);
+
+        assert!(result.is_ok());
+        let comment_id = result.unwrap();
+        assert_eq!(post.comments.len(), 1);
+
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.content, "Great post!");
+        assert_eq!(comment.created_by, "user2");
+        assert!(comment.parent_comment_id.is_none());
+        assert!(comment.likes.is_empty());
+        assert!(post.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_add_comment_with_parent() {
+        let mut post = create_test_post();
+
+        // Add parent comment first
+        let parent_id = post
+            .add_comment("user2".to_string(), "Parent comment".to_string(), None)
+            .unwrap();
+
+        // Add child comment
+        let result = post.add_comment(
+            "user3".to_string(),
+            "Child comment".to_string(),
+            Some(parent_id.clone()),
+        );
+
+        assert!(result.is_ok());
+        let child_id = result.unwrap();
+        assert_eq!(post.comments.len(), 2);
+
+        let child_comment = post.comments.get(&child_id).unwrap();
+        assert_eq!(child_comment.content, "Child comment");
+        assert_eq!(child_comment.parent_comment_id, Some(parent_id));
+    }
+
+    #[test]
+    fn test_add_comment_parent_not_found() {
+        let mut post = create_test_post();
+
+        // Try to add comment with non-existent parent
+        let result = post.add_comment(
+            "user2".to_string(),
+            "Orphan comment".to_string(),
+            Some("non-existent".to_string()),
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Parent comment not found");
+        assert_eq!(post.comments.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_comment_success() {
+        let mut post = create_test_post();
+
+        // Add a comment first
+        let comment_id = post
+            .add_comment("user2".to_string(), "Test comment".to_string(), None)
+            .unwrap();
+        assert_eq!(post.comments.len(), 1);
+
+        let initial_updated_at = post.updated_at;
+
+        // Remove the comment
+        let result = post.remove_comment(comment_id.clone());
+
+        assert!(result.is_ok());
+        assert_eq!(post.comments.len(), 0);
+        assert!(post.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_comment_not_found() {
+        let mut post = create_test_post();
+        let initial_updated_at = post.updated_at;
+
+        // Try to remove non-existent comment
+        let result = post.remove_comment("non-existent".to_string());
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Comment not found");
+        assert_eq!(post.comments.len(), 0);
+        assert_eq!(post.updated_at, initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_comment_with_children() {
+        let mut post = create_test_post();
+
+        // Add parent comment
+        let parent_id = post
+            .add_comment("user2".to_string(), "Parent comment".to_string(), None)
+            .unwrap();
+
+        // Add child comment
+        let child_id = post
+            .add_comment(
+                "user3".to_string(),
+                "Child comment".to_string(),
+                Some(parent_id.clone()),
+            )
+            .unwrap();
+
+        // Add grandchild comment
+        let grandchild_id = post
+            .add_comment(
+                "user4".to_string(),
+                "Grandchild comment".to_string(),
+                Some(child_id.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(post.comments.len(), 3);
+
+        // Remove parent comment (should remove all descendants)
+        let result = post.remove_comment(parent_id.clone());
+
+        assert!(result.is_ok());
+        assert_eq!(post.comments.len(), 0);
+
+        // Verify all comments are removed
+        assert!(!post.comments.contains_key(&parent_id));
+        assert!(!post.comments.contains_key(&child_id));
+        assert!(!post.comments.contains_key(&grandchild_id));
+    }
+
+    #[test]
+    fn test_remove_child_comment_only() {
+        let mut post = create_test_post();
+
+        // Add parent comment
+        let parent_id = post
+            .add_comment("user2".to_string(), "Parent comment".to_string(), None)
+            .unwrap();
+
+        // Add child comment
+        let child_id = post
+            .add_comment(
+                "user3".to_string(),
+                "Child comment".to_string(),
+                Some(parent_id.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(post.comments.len(), 2);
+
+        // Remove only child comment
+        let result = post.remove_comment(child_id.clone());
+
+        assert!(result.is_ok());
+        assert_eq!(post.comments.len(), 1);
+
+        // Verify parent remains, child is removed
+        assert!(post.comments.contains_key(&parent_id));
+        assert!(!post.comments.contains_key(&child_id));
+    }
+
+    #[test]
+    fn test_set_comment_like_success() {
+        let mut post = create_test_post();
+        let comment_id = post
+            .add_comment("user2".to_string(), "Test comment".to_string(), None)
+            .unwrap();
+        let initial_updated_at = post.comments.get(&comment_id).unwrap().updated_at;
+
+        // Add a like to comment
+        let result = post.set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Like);
+
+        assert!(result.is_ok());
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 1);
+        assert_eq!(comment.likes.get("user3"), Some(&LikeType::Like));
+        assert!(comment.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_set_comment_like_not_found() {
+        let mut post = create_test_post();
+
+        // Try to like non-existent comment
+        let result = post.set_comment_like(
+            "non-existent".to_string(),
+            "user3".to_string(),
+            LikeType::Like,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Comment not found");
+    }
+
+    #[test]
+    fn test_remove_comment_like_success() {
+        let mut post = create_test_post();
+        let comment_id = post
+            .add_comment("user2".to_string(), "Test comment".to_string(), None)
+            .unwrap();
+
+        // Add a like first
+        post.set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Like)
+            .unwrap();
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 1);
+
+        let initial_updated_at = comment.updated_at;
+
+        // Remove the like
+        let result = post.remove_comment_like(comment_id.clone(), "user3".to_string());
+
+        assert!(result.is_ok());
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 0);
+        assert!(comment.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_remove_comment_like_not_found() {
+        let mut post = create_test_post();
+        let comment_id = post
+            .add_comment("user2".to_string(), "Test comment".to_string(), None)
+            .unwrap();
+        let initial_updated_at = post.comments.get(&comment_id).unwrap().updated_at;
+
+        // Try to remove like from non-existent comment
+        let result1 = post.remove_comment_like("non-existent".to_string(), "user3".to_string());
+
+        // Try to remove non-existent like from existing comment
+        let result2 = post.remove_comment_like(comment_id.clone(), "user3".to_string());
+
+        assert!(result1.is_err());
+        assert_eq!(result1.unwrap_err(), "Comment not found");
+
+        assert!(result2.is_ok()); // Function succeeds even if like didn't exist
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 0);
+        assert_eq!(comment.updated_at, initial_updated_at); // Timestamp unchanged when no like removed
+    }
+
+    #[test]
+    fn test_comment_new() {
+        let comment = Comment::new(
+            "user1".to_string(),
+            "Test content".to_string(),
+            Some("parent-id".to_string()),
+        );
+
+        assert!(!comment.comment_id.is_empty());
+        assert_eq!(comment.content, "Test content");
+        assert_eq!(comment.created_by, "user1");
+        assert_eq!(comment.parent_comment_id, Some("parent-id".to_string()));
+        assert!(comment.likes.is_empty());
+        assert_eq!(comment.created_at, comment.updated_at);
+
+        // Test that comment_id is a valid UUID
+        uuid::Uuid::parse_str(&comment.comment_id).unwrap();
+    }
+
+    #[test]
+    fn test_comment_new_no_parent() {
+        let comment = Comment::new("user1".to_string(), "Test content".to_string(), None);
+
+        assert!(!comment.comment_id.is_empty());
+        assert_eq!(comment.content, "Test content");
+        assert_eq!(comment.created_by, "user1");
+        assert!(comment.parent_comment_id.is_none());
+        assert!(comment.likes.is_empty());
+        assert_eq!(comment.created_at, comment.updated_at);
+    }
+
+    #[test]
+    fn test_post_like_operations_integration() {
+        let mut post = create_test_post();
+
+        // Add multiple likes
+        assert!(!post.set_like("user2".to_string(), LikeType::Like));
+        assert!(!post.set_like("user3".to_string(), LikeType::Love));
+        assert!(!post.set_like("user4".to_string(), LikeType::Insightful));
+
+        assert_eq!(post.likes.len(), 3);
+
+        // Remove one like
+        assert!(post.remove_like("user3".to_string()));
+
+        assert_eq!(post.likes.len(), 2);
+        assert_eq!(post.likes.get("user2"), Some(&LikeType::Like));
+        assert_eq!(post.likes.get("user4"), Some(&LikeType::Insightful));
+        assert!(post.likes.get("user3").is_none());
+
+        // Override remaining like
+        assert!(post.set_like("user2".to_string(), LikeType::Dislike));
+
+        assert_eq!(post.likes.len(), 2);
+        assert_eq!(post.likes.get("user2"), Some(&LikeType::Dislike));
+        assert_eq!(post.likes.get("user4"), Some(&LikeType::Insightful));
+    }
+
+    #[test]
+    fn test_comment_like_operations_integration() {
+        let mut post = create_test_post();
+        let comment_id = post
+            .add_comment("user2".to_string(), "Test comment".to_string(), None)
+            .unwrap();
+
+        // Add multiple likes to comment
+        assert!(post
+            .set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Like)
+            .is_ok());
+        assert!(post
+            .set_comment_like(comment_id.clone(), "user4".to_string(), LikeType::Love)
+            .is_ok());
+        assert!(post
+            .set_comment_like(
+                comment_id.clone(),
+                "user5".to_string(),
+                LikeType::Insightful
+            )
+            .is_ok());
+
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 3);
+
+        // Remove one like
+        assert!(post
+            .remove_comment_like(comment_id.clone(), "user4".to_string())
+            .is_ok());
+
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 2);
+        assert_eq!(comment.likes.get("user3"), Some(&LikeType::Like));
+        assert_eq!(comment.likes.get("user5"), Some(&LikeType::Insightful));
+        assert!(comment.likes.get("user4").is_none());
+
+        // Override remaining like
+        assert!(post
+            .set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Dislike)
+            .is_ok());
+
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 2);
+        assert_eq!(comment.likes.get("user3"), Some(&LikeType::Dislike));
+        assert_eq!(comment.likes.get("user5"), Some(&LikeType::Insightful));
+    }
+
+    #[test]
+    fn test_all_post_like_types() {
+        let mut post = create_test_post();
+
+        let like_types = vec![
+            LikeType::Like,
+            LikeType::Love,
+            LikeType::Insightful,
+            LikeType::Dislike,
+        ];
+
+        for (i, like_type) in like_types.iter().enumerate() {
+            let user_id = format!("user{}", i + 2);
+            assert!(!post.set_like(user_id, like_type.clone()));
+        }
+
+        assert_eq!(post.likes.len(), 4);
+        assert_eq!(post.likes.get("user2"), Some(&LikeType::Like));
+        assert_eq!(post.likes.get("user3"), Some(&LikeType::Love));
+        assert_eq!(post.likes.get("user4"), Some(&LikeType::Insightful));
+        assert_eq!(post.likes.get("user5"), Some(&LikeType::Dislike));
+    }
+
+    #[test]
+    fn test_all_comment_like_types() {
+        let mut post = create_test_post();
+        let comment_id = post
+            .add_comment("user2".to_string(), "Test comment".to_string(), None)
+            .unwrap();
+
+        let like_types = vec![
+            LikeType::Like,
+            LikeType::Love,
+            LikeType::Insightful,
+            LikeType::Dislike,
+        ];
+
+        for (i, like_type) in like_types.iter().enumerate() {
+            let user_id = format!("user{}", i + 3);
+            assert!(post
+                .set_comment_like(comment_id.clone(), user_id, like_type.clone())
+                .is_ok());
+        }
+
+        let comment = post.comments.get(&comment_id).unwrap();
+        assert_eq!(comment.likes.len(), 4);
+        assert_eq!(comment.likes.get("user3"), Some(&LikeType::Like));
+        assert_eq!(comment.likes.get("user4"), Some(&LikeType::Love));
+        assert_eq!(comment.likes.get("user5"), Some(&LikeType::Insightful));
+        assert_eq!(comment.likes.get("user6"), Some(&LikeType::Dislike));
+    }
+
+    #[test]
+    fn test_complex_comment_hierarchy() {
+        let mut post = create_test_post();
+
+        // Create a complex hierarchy:
+        // comment1
+        // ├── comment2
+        // │   └── comment4
+        // └── comment3
+
+        let comment1 = post
+            .add_comment("user2".to_string(), "Comment 1".to_string(), None)
+            .unwrap();
+        let comment2 = post
+            .add_comment(
+                "user3".to_string(),
+                "Comment 2".to_string(),
+                Some(comment1.clone()),
+            )
+            .unwrap();
+        let comment3 = post
+            .add_comment(
+                "user4".to_string(),
+                "Comment 3".to_string(),
+                Some(comment1.clone()),
+            )
+            .unwrap();
+        let comment4 = post
+            .add_comment(
+                "user5".to_string(),
+                "Comment 4".to_string(),
+                Some(comment2.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(post.comments.len(), 4);
+
+        // Remove comment2 (should also remove comment4)
+        assert!(post.remove_comment(comment2.clone()).is_ok());
+
+        assert_eq!(post.comments.len(), 2);
+        assert!(post.comments.contains_key(&comment1));
+        assert!(post.comments.contains_key(&comment3));
+        assert!(!post.comments.contains_key(&comment2));
+        assert!(!post.comments.contains_key(&comment4));
+
+        // Remove comment1 (should also remove comment3)
+        assert!(post.remove_comment(comment1.clone()).is_ok());
+
+        assert_eq!(post.comments.len(), 0);
+    }
+
+    #[test]
+    fn test_post_update_from() {
+        let post = create_test_post();
+        let update = PostUpdate::from(&post);
+
+        assert_eq!(update.post_id, post.post_id);
+        assert_eq!(update.created_at, post.created_at);
+        assert_eq!(update.updated_at, post.updated_at);
+    }
+
+    #[test]
+    fn test_post_updates_new() {
+        let updates = PostUpdates::new("user1".to_string());
+
+        assert_eq!(updates.user_id, "user1");
+        assert!(updates.updates.is_empty());
+        assert_eq!(updates.created_at, updates.updated_at);
+    }
 }

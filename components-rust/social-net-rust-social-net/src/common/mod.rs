@@ -1,6 +1,9 @@
 use golem_rust::Schema;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use std::thread;
+use std::time::Duration;
+use std::time::Instant;
 
 #[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
 pub enum UserConnectionType {
@@ -178,4 +181,48 @@ pub(crate) mod snapshot {
             _ => Err("Unsupported serialization version".to_string()),
         }
     }
+}
+
+pub async fn poll_for_updates<T, F, Fut>(
+    user_id: String,
+    updates_since: Option<chrono::DateTime<chrono::Utc>>,
+    iter_wait_time: Option<u32>,
+    max_wait_time: Option<u32>,
+    get_updates_fn: F,
+    log_prefix: &str,
+) -> Option<T>
+where
+    F: Fn(String, chrono::DateTime<chrono::Utc>) -> Fut,
+    Fut: std::future::Future<Output = Option<T>>,
+{
+    let since = updates_since.unwrap_or(chrono::Utc::now());
+    let max_wait_time = Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
+    let iter_wait_time = Duration::from_millis(iter_wait_time.unwrap_or(1000) as u64);
+    let now = Instant::now();
+    let mut done = false;
+    let mut result: Option<T> = None;
+
+    while !done {
+        println!(
+            "{} - user id: {}, updates since: {}, elapsed time: {}ms, max wait time: {}ms",
+            log_prefix,
+            user_id,
+            since,
+            now.elapsed().as_millis(),
+            max_wait_time.as_millis()
+        );
+
+        let res = get_updates_fn(user_id.clone(), since).await;
+
+        if let Some(updates) = res {
+            result = Some(updates);
+            done = true;
+        } else {
+            done = now.elapsed() >= max_wait_time;
+            if !done {
+                thread::sleep(iter_wait_time);
+            }
+        }
+    }
+    result
 }

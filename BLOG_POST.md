@@ -152,7 +152,6 @@ This agent maintains the personal timeline for a user. It stores references (`Po
 trait UserTimelineAgent {
     fn new(id: String) -> Self;
     fn get_timeline(&self) -> Option<UserTimeline>;
-    // Called by the fan-out process
     fn posts_updated(&mut self, posts: Vec<PostRef>) -> Result<(), String>;
 }
 ```
@@ -264,7 +263,7 @@ trait UserTimelineUpdatesAgent {
 }
 ```
 
-The implementation shows how the agent loops and waits for data, providing a "server-push" like experience over standard HTTP:
+The implementation leverages a generic `poll_for_updates` helper to handle the loop and timeout logic, keeping the agent code clean and focused on the specific data retrieval:
 
 ```rust
 async fn get_posts_updates(
@@ -274,27 +273,55 @@ async fn get_posts_updates(
     iter_wait_time: Option<u32>,
     max_wait_time: Option<u32>,
 ) -> Option<Vec<PostRef>> {
-    // ... setup times ...
+    poll_for_updates(
+        user_id,
+        updates_since,
+        iter_wait_time,
+        max_wait_time,
+        |uid, since| async move {
+            let res = UserTimelineAgentClient::get(uid).get_updates(since).await;
+            res.map(|r| r.posts)
+        },
+        "get posts updates",
+    )
+    .await
+}
+```
+
+Here is the generic `poll_for_updates` function that encapsulates the polling logic:
+
+```rust
+pub async fn poll_for_updates<T, F, Fut>(
+    user_id: String,
+    updates_since: Option<chrono::DateTime<chrono::Utc>>,
+    iter_wait_time: Option<u32>,
+    max_wait_time: Option<u32>,
+    get_updates_fn: F,
+    log_prefix: &str,
+) -> Option<T>
+where
+    F: Fn(String, chrono::DateTime<chrono::Utc>) -> Fut,
+    Fut: std::future::Future<Output = Option<T>>,
+{
+    let since = updates_since.unwrap_or(chrono::Utc::now());
+    let max_wait_time = Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
+    let iter_wait_time = Duration::from_millis(iter_wait_time.unwrap_or(1000) as u64);
+    let now = Instant::now();
+    let mut done = false;
+    let mut result: Option<T> = None;
+
     while !done {
-        // Poll the stateful agent
-        let res = UserTimelineAgentClient::get(user_id.clone())
-            .get_updates(since)
-            .await;
+        let res = get_updates_fn(user_id.clone(), since).await;
 
         if let Some(updates) = res {
-            if !updates.posts.is_empty() {
-                result = Some(updates.posts);
-                done = true;
-            } else {
-                // Wait before next check
-                result = Some(vec![]);
-                done = now.elapsed() >= max_wait_time;
-                if !done {
-                    thread::sleep(iter_wait_time);
-                }
+            result = Some(updates);
+            done = true;
+        } else {
+            done = now.elapsed() >= max_wait_time;
+            if !done {
+                thread::sleep(iter_wait_time);
             }
-        } 
-        // ...
+        }
     }
     result
 }
@@ -409,7 +436,7 @@ trait UserChatsViewAgent {
 
 ## Frontend
 
-While the backend infrastructure is a novel network of agents, the frontend is a modern, familiar web application.
+While the backend infrastructure is a network of agents, the frontend is a web application.
 
 Built with **Vue 3**, **TypeScript**, and **Tailwind CSS**, it communicates with the Golem agents via a standard REST API exposed by the Golem Gateway. The frontend doesn't need to know it's talking to thousands of distributed agents; it just makes HTTP requests like any other SPA. All the complexity of routing to the correct agent is handled by the Golem infrastructure.
 
