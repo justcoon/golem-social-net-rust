@@ -190,17 +190,17 @@ pub async fn poll_for_updates<T, F, Fut>(
     max_wait_time: Option<u32>,
     get_updates_fn: F,
     log_prefix: &str,
-) -> Option<T>
+) -> Option<Vec<T>>
 where
     F: Fn(String, chrono::DateTime<chrono::Utc>) -> Fut,
-    Fut: std::future::Future<Output = Option<T>>,
+    Fut: std::future::Future<Output = Option<Vec<T>>>,
 {
     let since = updates_since.unwrap_or(chrono::Utc::now());
     let max_wait_time = Duration::from_millis(max_wait_time.unwrap_or(10000) as u64);
     let iter_wait_time = Duration::from_millis(iter_wait_time.unwrap_or(1000) as u64);
     let now = Instant::now();
     let mut done = false;
-    let mut result: Option<T> = None;
+    let mut result: Option<Vec<T>> = None;
 
     while !done {
         println!(
@@ -215,13 +215,19 @@ where
         let res = get_updates_fn(user_id.clone(), since).await;
 
         if let Some(updates) = res {
-            result = Some(updates);
-            done = true;
-        } else {
-            done = now.elapsed() >= max_wait_time;
-            if !done {
-                thread::sleep(iter_wait_time);
+            if !updates.is_empty() {
+                result = Some(updates);
+                done = true;
+            } else {
+                result = Some(vec![]);
+                done = now.elapsed() >= max_wait_time;
+                if !done {
+                    thread::sleep(iter_wait_time);
+                }
             }
+        } else {
+            result = None;
+            done = true;
         }
     }
     result
