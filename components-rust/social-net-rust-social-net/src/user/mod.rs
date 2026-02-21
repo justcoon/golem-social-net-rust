@@ -281,23 +281,12 @@ impl UserQueryMatcher {
             }
         }
 
-        // If no terms to match, just check if field filters passed
-        if self.query.terms.is_empty() {
-            return true;
-        }
-
-        // Check search terms against all searchable fields
-        for term in self.query.terms.iter() {
-            let matches = query::text_matches(&user.user_id, term)
-                || query::opt_text_matches(user.name.clone(), term)
-                || query::opt_text_matches(user.email.clone(), term);
-
-            if !matches {
-                return false;
-            }
-        }
-
-        true
+        self.query.terms.is_empty()
+            || self.query.terms.iter().any(|term| {
+                query::text_matches(&user.user_id, term)
+                    || query::opt_text_matches(user.name.clone(), term)
+                    || query::opt_text_matches(user.email.clone(), term)
+            })
     }
 }
 
@@ -863,5 +852,21 @@ mod tests {
         assert_eq!(user.name, Some("Jane Doe".to_string()));
         assert!(user.email.is_none());
         assert_eq!(user.connected_users.len(), 2);
+    }
+
+    #[test]
+    fn test_user_query_matcher_or_logic() {
+        let mut user = User::new("user1".to_string());
+        user.set_name(Some("John Doe".to_string()));
+        let _ = user.set_email(Some("john@example.com".to_string()));
+
+        let matcher = UserQueryMatcher::new("John Smith"); // "John" matches, "Smith" doesn't
+        assert!(matcher.matches(user.clone()));
+
+        let matcher = UserQueryMatcher::new("Smith Doe"); // "Doe" matches, "Smith" doesn't
+        assert!(matcher.matches(user.clone()));
+
+        let matcher = UserQueryMatcher::new("Smith Brown"); // Neither matches
+        assert!(!matcher.matches(user.clone()));
     }
 }

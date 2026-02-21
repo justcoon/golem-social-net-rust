@@ -589,21 +589,11 @@ pub fn matches_post(post: Post, query: Query) -> bool {
         }
     }
 
-    // If no terms to match, just check if field filters passed
-    if query.terms.is_empty() {
-        return true;
-    }
-
-    // Check search terms against all searchable fields
-    for term in query.terms.iter() {
-        let matches = query::text_matches(&post.content, term);
-
-        if !matches {
-            return false;
-        }
-    }
-
-    true
+    query.terms.is_empty()
+        || query
+            .terms
+            .iter()
+            .any(|term| query::text_matches(&post.content, term))
 }
 
 #[cfg(test)]
@@ -1163,5 +1153,20 @@ mod tests {
         assert_eq!(updates.user_id, "user1");
         assert!(updates.updates.is_empty());
         assert_eq!(updates.created_at, updates.updated_at);
+    }
+
+    #[test]
+    fn test_matches_post_or_logic() {
+        let mut post = Post::new("post1".to_string());
+        post.content = "Hello world from Rust".to_string();
+
+        let query = Query::new("Hello Python"); // "Hello" matches, "Python" doesn't
+        assert!(matches_post(post.clone(), query));
+
+        let query = Query::new("Python Rust"); // "Rust" matches, "Python" doesn't
+        assert!(matches_post(post.clone(), query));
+
+        let query = Query::new("Python Java"); // Neither matches
+        assert!(!matches_post(post.clone(), query));
     }
 }

@@ -246,6 +246,10 @@ impl ChatQueryMatcher {
         for (field, value) in self.field_filters.iter() {
             let matches = match field.as_str() {
                 "created-by" | "createdby" => query::text_exact_matches(&chat.created_by, value),
+                "content" => chat
+                    .messages
+                    .iter()
+                    .any(|m| query::text_matches(&m.content, value)),
                 "participants" => chat
                     .participants
                     .iter()
@@ -258,25 +262,14 @@ impl ChatQueryMatcher {
             }
         }
 
-        // If no terms to match, just check if field filters passed
-        if self.terms.is_empty() {
-            return true;
-        }
-
-        // Check search terms against all searchable fields
-        for term in self.terms.iter() {
-            let matches = query::text_matches(&chat.created_by, term)
-                || chat
-                    .participants
-                    .iter()
-                    .any(|p| query::text_exact_matches(p, term));
-
-            if !matches {
-                return false;
-            }
-        }
-
-        true
+        self.terms.is_empty()
+            || self.terms.iter().any(|term| {
+                query::text_matches(&chat.created_by, term)
+                    || chat
+                        .participants
+                        .iter()
+                        .any(|p| query::text_exact_matches(p, term))
+            })
     }
 }
 
