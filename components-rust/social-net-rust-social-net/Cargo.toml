@@ -21,4 +21,4 @@ email_address =  { workspace = true }
 uuid =  { workspace = true }
 schemars = { workspace = true }
 regex = "1.12.2"
-futures = "0.3.31"
+futures = "0.3.32"
