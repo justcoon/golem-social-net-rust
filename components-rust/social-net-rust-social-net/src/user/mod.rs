@@ -2,7 +2,7 @@ use crate::common::{query, UserConnectionType};
 use email_address::EmailAddress;
 use futures::future::join_all;
 use golem_rust::bindings::golem::api::host::{
-    resolve_component_id, AgentAllFilter, AgentAnyFilter, AgentNameFilter, AgentPropertyFilter,
+    get_self_metadata, AgentAllFilter, AgentAnyFilter, AgentNameFilter, AgentPropertyFilter,
     GetAgents, StringFilterComparator,
 };
 use golem_rust::golem_wasm::ComponentId;
@@ -273,6 +273,10 @@ impl UserQueryMatcher {
                 "user-id" | "userid" => query::text_exact_matches(&user.user_id, value),
                 "name" => query::opt_text_matches(user.name.clone(), value),
                 "email" => query::opt_text_exact_matches(user.email.clone(), value),
+                "connected-users" | "connectedusers" => user
+                    .connected_users
+                    .iter()
+                    .any(|(id, _)| query::text_exact_matches(id, value)),
                 _ => false, // Unknown field
             };
 
@@ -281,27 +285,16 @@ impl UserQueryMatcher {
             }
         }
 
-        // If no terms to match, just check if field filters passed
-        if self.query.terms.is_empty() {
-            return true;
-        }
-
-        // Check search terms against all searchable fields
-        for term in self.query.terms.iter() {
-            let matches = query::text_matches(&user.user_id, term)
-                || query::opt_text_matches(user.name.clone(), term)
-                || query::opt_text_matches(user.email.clone(), term);
-
-            if !matches {
-                return false;
-            }
-        }
-
-        true
+        self.query.terms.is_empty()
+            || self.query.terms.iter().any(|term| {
+                query::text_matches(&user.user_id, term)
+                    || query::opt_text_matches(user.name.clone(), term)
+                    || query::opt_text_matches(user.email.clone(), term)
+            })
     }
 }
 
-fn get_agent_filter() -> AgentAnyFilter {
+fn get_user_agent_filter() -> AgentAnyFilter {
     AgentAnyFilter {
         filters: vec![AgentAllFilter {
             filters: vec![AgentPropertyFilter::Name(AgentNameFilter {
@@ -350,45 +343,41 @@ trait UserSearchAgent {
 }
 
 struct UserSearchAgentImpl {
-    component_id: Option<ComponentId>,
+    component_id: ComponentId,
 }
 
 #[agent_implementation]
 impl UserSearchAgent for UserSearchAgentImpl {
     fn new() -> Self {
-        let component_id = resolve_component_id("social-net-rust:social-net");
+        let component_id = get_self_metadata().agent_id.component_id;
         UserSearchAgentImpl { component_id }
     }
 
     async fn search(&self, query: String) -> Result<Vec<User>, String> {
-        if let Some(component_id) = self.component_id {
-            println!("searching for users - query: {}", query);
+        println!("searching for users - query: {}", query);
 
-            let mut values: Vec<User> = Vec::new();
-            let matcher = UserQueryMatcher::new(&query);
+        let mut values: Vec<User> = Vec::new();
+        let matcher = UserQueryMatcher::new(&query);
 
-            let filter = get_agent_filter();
+        let filter = get_user_agent_filter();
 
-            let get_agents = GetAgents::new(component_id, Some(&filter), false);
+        let get_agents = GetAgents::new(self.component_id, Some(&filter), false);
 
-            let mut processed_agent_ids: HashSet<String> = HashSet::new();
+        let mut processed_agent_ids: HashSet<String> = HashSet::new();
 
-            while let Some(agents) = get_agents.get_next() {
-                let agent_ids = agents
-                    .iter()
-                    .filter_map(|a| get_user_agent_id(a.agent_id.agent_id.as_str()))
-                    .filter(|n| !processed_agent_ids.contains(n))
-                    .collect::<HashSet<_>>();
+        while let Some(agents) = get_agents.get_next() {
+            let agent_ids = agents
+                .iter()
+                .filter_map(|a| get_user_agent_id(a.agent_id.agent_id.as_str()))
+                .filter(|n| !processed_agent_ids.contains(n))
+                .collect::<HashSet<_>>();
 
-                let users = get_users(agent_ids.clone(), matcher.clone()).await?;
-                processed_agent_ids.extend(agent_ids);
-                values.extend(users);
-            }
-
-            Ok(values)
-        } else {
-            Err("Component not found".to_string())
+            let users = get_users(agent_ids.clone(), matcher.clone()).await?;
+            processed_agent_ids.extend(agent_ids);
+            values.extend(users);
         }
+
+        Ok(values)
     }
 }
 
@@ -863,5 +852,21 @@ mod tests {
         assert_eq!(user.name, Some("Jane Doe".to_string()));
         assert!(user.email.is_none());
         assert_eq!(user.connected_users.len(), 2);
+    }
+
+    #[test]
+    fn test_user_query_matcher_or_logic() {
+        let mut user = User::new("user1".to_string());
+        user.set_name(Some("John Doe".to_string()));
+        let _ = user.set_email(Some("john@example.com".to_string()));
+
+        let matcher = UserQueryMatcher::new("John Smith"); // "John" matches, "Smith" doesn't
+        assert!(matcher.matches(user.clone()));
+
+        let matcher = UserQueryMatcher::new("Smith Doe"); // "Doe" matches, "Smith" doesn't
+        assert!(matcher.matches(user.clone()));
+
+        let matcher = UserQueryMatcher::new("Smith Brown"); // Neither matches
+        assert!(!matcher.matches(user.clone()));
     }
 }

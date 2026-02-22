@@ -467,6 +467,7 @@ Golem Social Net demonstrates that complex, stateful applications can be built w
 1. Explore the [GitHub repository](https://github.com/justcoon/golem-social-net-rust)
 2. Try deploying your own instance
 3. Contribute to the project
+4. Check out the [TypeScript implementation](https://github.com/justcoon/golem-social-net-ts) for a similar application
 
 ## Resources
 
