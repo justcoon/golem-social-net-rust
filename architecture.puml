@@ -22,6 +22,7 @@ package "Golem Cloud" {
 
     package "Stateful Agents (Persistent)" {
         [User Agent] as user STATEFUL
+        [User Index Agent] as user_index STATEFUL
         [Post Agent] as post STATEFUL
         [User Posts Agent] as user_posts STATEFUL
         [User Timeline Agent] as user_timeline STATEFUL
@@ -57,7 +58,9 @@ gateway --> chats_view : "Get User Chats"
 gateway --> chats_updates : "Chat Long-polling"
 
 ' Intern-agent interactions
-user_search --> user : "Query Discovery"
+user --> user_index : "Register User ID"
+user_search --> user_index : "Get All User IDs"
+user_search --> user : "Query User Profiles"
 user_posts --> post : "Initialize Post"
 user_posts_view --> user_posts : "Get Post Refs"
 user_posts_view --> post : "Resolve Content"
@@ -85,6 +88,7 @@ note right of gateway
   <b>Routes by Prefix</b>
   • /.../users/search → User Search Agent
   • /.../users/{id} → User Agent
+  • /.../users → User Index Agent
   • /.../users/{id}/posts → User Posts Agent
   • /.../users/{id}/timeline → User Timeline Agent
   • /.../users/{id}/chats → User Chats Agent

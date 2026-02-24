@@ -1,8 +1,7 @@
 use crate::common::query;
-use crate::post::{fetch_posts_by_ids, matches_post, Post, PostAgentClient};
+use crate::post::{fetch_posts_by_ids, fetch_posts_by_ids_and_query, Post, PostAgentClient};
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct PostRef {
@@ -136,30 +135,6 @@ impl UserPostsAgent for UserPostsAgentImpl {
     }
 }
 
-#[derive(Clone, Debug)]
-struct PostQueryMatcher {
-    query: query::Query,
-}
-
-impl Display for PostQueryMatcher {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PostQueryMatcher(query: {})", self.query)
-    }
-}
-
-impl PostQueryMatcher {
-    fn new(query: &str) -> Self {
-        let q = query::Query::new(query);
-
-        Self { query: q }
-    }
-
-    // Check if a post matches the query
-    fn matches_post(&self, post: Post) -> bool {
-        matches_post(post, self.query.clone())
-    }
-}
-
 #[agent_definition(mode = "ephemeral")]
 trait UserPostsViewAgent {
     fn new() -> Self;
@@ -187,9 +162,9 @@ impl UserPostsViewAgent for UserPostsViewAgentImpl {
         println!("get posts view - user id: {user_id}, query: {query}");
 
         if let Some(user_posts) = user_posts {
-            let query_matcher = PostQueryMatcher::new(&query);
+            let query = query::Query::new(&query);
 
-            println!("get posts view - user id: {user_id}, query matcher: {query_matcher}");
+            println!("get posts view - user id: {user_id}, query matcher: {query}");
 
             let user_posts = user_posts.posts;
 
@@ -197,14 +172,9 @@ impl UserPostsViewAgent for UserPostsViewAgentImpl {
                 Some(vec![])
             } else {
                 let post_ids: Vec<String> = user_posts.iter().map(|p| p.post_id.clone()).collect();
-                let posts = fetch_posts_by_ids(&post_ids).await;
+                let posts = fetch_posts_by_ids_and_query(&post_ids, query).await;
 
-                let filtered_posts: Vec<Post> = posts
-                    .into_iter()
-                    .filter(|p| query_matcher.matches_post(p.clone()))
-                    .collect();
-
-                Some(filtered_posts)
+                Some(posts)
             }
         } else {
             None

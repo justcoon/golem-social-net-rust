@@ -1,9 +1,8 @@
-use crate::chat::{fetch_chats_by_ids, Chat, ChatAgentClient};
+use crate::chat::{fetch_chats_by_ids, fetch_chats_by_ids_and_query, Chat, ChatAgentClient};
 use crate::common::{poll_for_updates, query};
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ChatRef {
@@ -214,65 +213,6 @@ impl UserChatsAgent for UserChatsAgentImpl {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ChatQueryMatcher {
-    terms: Vec<String>,
-    field_filters: Vec<(String, String)>,
-}
-
-impl Display for ChatQueryMatcher {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "ChatQueryMatcher(terms: {:?}, field_filters: {:?})",
-            self.terms, self.field_filters
-        )
-    }
-}
-
-impl ChatQueryMatcher {
-    fn new(query: &str) -> Self {
-        let q = query::Query::new(query);
-
-        Self {
-            terms: q.terms,
-            field_filters: q.field_filters,
-        }
-    }
-
-    // Check if a chat matches the query
-    fn matches_chat(&self, chat: Chat) -> bool {
-        // Check field filters first
-        for (field, value) in self.field_filters.iter() {
-            let matches = match field.as_str() {
-                "created-by" | "createdby" => query::text_exact_matches(&chat.created_by, value),
-                "content" => chat
-                    .messages
-                    .iter()
-                    .any(|m| query::text_matches(&m.content, value)),
-                "participants" => chat
-                    .participants
-                    .iter()
-                    .any(|p| query::text_exact_matches(p, value)),
-                _ => false, // Unknown field
-            };
-
-            if !matches {
-                return false;
-            }
-        }
-
-        self.terms.is_empty()
-            || self.terms.iter().any(|term| {
-                query::text_matches(&chat.created_by, term)
-                    || chat
-                        .participants
-                        .iter()
-                        .any(|p| query::text_exact_matches(p, term))
-            })
-    }
-}
-
 #[agent_definition(mode = "ephemeral")]
 trait UserChatsViewAgent {
     fn new() -> Self;
@@ -300,9 +240,9 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
         println!("get chats view - user id: {user_id}, query: {query}");
 
         if let Some(user_chats) = user_chats {
-            let query_matcher = ChatQueryMatcher::new(&query);
+            let query = query::Query::new(&query);
 
-            println!("get chats view - user id: {user_id}, query matcher: {query_matcher}");
+            println!("get chats view - user id: {user_id}, query matcher: {query}");
 
             let user_chats = user_chats.chats;
 
@@ -310,14 +250,9 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
                 Some(vec![])
             } else {
                 let chat_ids: Vec<String> = user_chats.iter().map(|p| p.chat_id.clone()).collect();
-                let chats = fetch_chats_by_ids(&chat_ids).await;
+                let chats = fetch_chats_by_ids_and_query(&chat_ids, query).await;
 
-                let filtered_chats: Vec<Chat> = chats
-                    .into_iter()
-                    .filter(|p| query_matcher.matches_chat(p.clone()))
-                    .collect();
-
-                Some(filtered_chats)
+                Some(chats)
             }
         } else {
             None

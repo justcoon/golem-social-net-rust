@@ -1,3 +1,4 @@
+use crate::common::query;
 use crate::common::LikeType;
 use crate::user_chats::UserChatsAgentClient;
 use futures::future::join_all;
@@ -113,6 +114,35 @@ impl Chat {
             None => false,
         }
     }
+
+    fn matches_query(&self, query: &query::Query) -> bool {
+        // Check field filters first
+        for (field, value) in query.field_filters.iter() {
+            let matches = match field.as_str() {
+                "chat-id" => query::text_exact_matches(&self.chat_id, value),
+                "created-by" => query::text_exact_matches(&self.created_by, value),
+                "participants" => self
+                    .participants
+                    .iter()
+                    .any(|p| query::text_exact_matches(p, value)),
+                _ => false, // Unknown field
+            };
+            if !matches {
+                return false;
+            }
+        }
+
+        // Check text terms in chat_id, created_by, and message content
+        query.terms.is_empty()
+            || query.terms.iter().any(|term| {
+                query::text_matches(&self.chat_id, term)
+                    || query::text_matches(&self.created_by, term)
+                    || self
+                        .messages
+                        .iter()
+                        .any(|m| query::text_matches(&m.content, term))
+            })
+    }
 }
 
 #[agent_definition]
@@ -120,6 +150,8 @@ trait ChatAgent {
     fn new(id: String) -> Self;
 
     fn get_chat(&self) -> Option<Chat>;
+
+    fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
 
     fn init_chat(
         &mut self,
@@ -170,6 +202,10 @@ impl ChatAgent for ChatAgentImpl {
 
     fn get_chat(&self) -> Option<Chat> {
         self.state.clone()
+    }
+
+    fn get_chat_if_match(&self, query: crate::common::query::Query) -> Option<Chat> {
+        self.state.clone().filter(|chat| chat.matches_query(&query))
     }
 
     fn init_chat(
@@ -387,6 +423,29 @@ pub async fn fetch_chats_by_ids(chat_ids: &[String]) -> Vec<Chat> {
             .collect::<Vec<_>>();
 
         let tasks: Vec<_> = clients.iter().map(|client| client.get_chat()).collect();
+        let responses = join_all(tasks).await;
+
+        let chunk_result: Vec<Chat> = responses.into_iter().flatten().collect();
+
+        result.extend(chunk_result);
+    }
+
+    result
+}
+
+pub async fn fetch_chats_by_ids_and_query(chat_ids: &[String], query: query::Query) -> Vec<Chat> {
+    let mut result: Vec<Chat> = vec![];
+
+    for chunk in chat_ids.chunks(10) {
+        let clients = chunk
+            .iter()
+            .map(|chat_id| ChatAgentClient::get(chat_id.clone()))
+            .collect::<Vec<_>>();
+
+        let tasks: Vec<_> = clients
+            .iter()
+            .map(|client| client.get_chat_if_match(query.clone()))
+            .collect();
         let responses = join_all(tasks).await;
 
         let chunk_result: Vec<Chat> = responses.into_iter().flatten().collect();
@@ -681,5 +740,93 @@ mod tests {
             chat.messages[0].likes.get("user5"),
             Some(&LikeType::Dislike)
         );
+    }
+
+    #[test]
+    fn test_chat_matches_query_basic() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world from Rust".to_string());
+
+        let query = query::Query::new("Hello");
+        assert!(chat.matches_query(&query));
+
+        let query = query::Query::new("Python");
+        assert!(!chat.matches_query(&query));
+    }
+
+    #[test]
+    fn test_chat_matches_query_chat_id() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world".to_string());
+
+        let query = query::Query::new("chat-id:test-chat-1");
+        assert!(chat.matches_query(&query));
+
+        let query = query::Query::new("chat-id:other-chat");
+        assert!(!chat.matches_query(&query));
+    }
+
+    #[test]
+    fn test_chat_matches_query_created_by() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world".to_string());
+
+        let query = query::Query::new("created-by:user1");
+        assert!(chat.matches_query(&query));
+
+        let query = query::Query::new("created-by:user2");
+        assert!(!chat.matches_query(&query));
+    }
+
+    #[test]
+    fn test_chat_matches_query_participants() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world".to_string());
+
+        let query = query::Query::new("participants:user1");
+        assert!(chat.matches_query(&query));
+
+        let query = query::Query::new("participants:user2");
+        assert!(chat.matches_query(&query));
+
+        let query = query::Query::new("participants:user3");
+        assert!(!chat.matches_query(&query));
+    }
+
+    #[test]
+    fn test_chat_matches_query_message_content() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world from Rust".to_string());
+        chat.add_message("user2".to_string(), "Python programming".to_string());
+
+        let query = query::Query::new("Rust");
+        assert!(chat.matches_query(&query)); // Matches first message
+
+        let query = query::Query::new("Python");
+        assert!(chat.matches_query(&query)); // Matches second message
+
+        let query = query::Query::new("Java");
+        assert!(!chat.matches_query(&query)); // No matches
+    }
+
+    #[test]
+    fn test_chat_matches_query_multiple_filters() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world".to_string());
+
+        let query = query::Query::new("chat-id:test-chat-1 created-by:user1");
+        assert!(chat.matches_query(&query));
+
+        let query = query::Query::new("chat-id:test-chat-1 created-by:user2");
+        assert!(!chat.matches_query(&query));
+    }
+
+    #[test]
+    fn test_chat_matches_query_wildcard() {
+        let mut chat = create_test_chat();
+        chat.add_message("user1".to_string(), "Hello world".to_string());
+
+        let query = query::Query::new("*");
+        assert!(chat.matches_query(&query)); // Wildcard matches all
     }
 }

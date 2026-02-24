@@ -14,6 +14,7 @@ The application follows a granular agent-based architecture, where different asp
 
 #### Stateful Agents (Persistent)
 - **User Agent**: Manages user profile information (name, email) and maintains a list of connections (friends and followers).
+- **User Index Agent**: Maintains a centralized registry of all user IDs in the system, automatically tracking when new users are created.
 - **Post Agent**: Manages the lifecycle of an individual post, including its content, likes, and a hierarchical comment system.
 - **User Posts Agent**: Maintains a registry of all posts created by a specific user.
 - **User Timeline Agent**: Stores references to posts that should appear in a user's personal timeline.
@@ -22,7 +23,7 @@ The application follows a granular agent-based architecture, where different asp
 - **User Chats Agent**: Maintains a registry of all active chats for a specific user.
 
 #### Ephemeral Agents (View/Computational)
-- **User Search Agent**: Performs global user searches by discovering and querying User Agent instances.
+- **User Search Agent**: Performs global user searches by querying the User Index Agent for user IDs and then retrieving user profiles in parallel chunks.
 - **User Posts View Agent**: Generates a detailed view of a user's posts by aggregating content from multiple Post Agents.
 - **User Timeline View Agent**: Generates a detailed view of a user's timeline by aggregating content from multiple Post Agents.
 - **User Timeline Updates Agent**: Implements a long-polling mechanism to provide real-time updates for a user's timeline.
@@ -47,8 +48,8 @@ The system manages interactions through a mix of synchronous RPC calls and async
    - It maps these requests to specific **Golem RPC** calls targeting the appropriate agent (e.g., `/users/{id}` maps to a `User Agent`).
 
 2. **Discovery & Search**:
-   - **User Search Agent** (ephemeral) discovers stateful **User Agents** by querying Golem's metadata and filtering by name patterns.
-   - Once a subset of agents is found, it performs parallel RPC calls to retrieve matching profile data.
+   - **User Agent** automatically registers new users with the **User Index Agent** when created.
+   - **User Search Agent** (ephemeral) queries the **User Index Agent** for all user IDs, then retrieves user profiles in parallel chunks for efficient processing.
 
 3. **Content Aggregation (Materialized Views)**:
    - **View Agents** (User Posts View, User Timeline View) handle complex read operations.
@@ -70,7 +71,7 @@ The system manages interactions through a mix of synchronous RPC calls and async
    - Read operations are optimized through the **User Chats View Agent**, which handles parallel resolution of chat metadata and content.
 
 ### State Management
-All core agents (User, Post, User Posts, User Timeline) have their state managed by Golem Cloud, ensuring reliability and scalability through the agent-based architecture.
+All core agents (User, User Index, Post, User Posts, User Timeline) have their state managed by Golem Cloud, ensuring reliability and scalability through the agent-based architecture.
 
 
 ## Quick Start

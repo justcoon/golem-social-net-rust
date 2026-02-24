@@ -62,6 +62,7 @@ impl Display for LikeType {
 }
 
 pub(crate) mod query {
+    use golem_rust::Schema;
     use std::fmt::{Display, Formatter};
 
     pub fn opt_text_matches(text: Option<String>, query: &str) -> bool {
@@ -110,7 +111,7 @@ pub(crate) mod query {
         tokens
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Schema, Clone, Debug)]
     pub struct Query {
         pub terms: Vec<String>,
         pub field_filters: Vec<(String, String)>,

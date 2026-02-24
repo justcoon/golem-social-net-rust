@@ -1,10 +1,10 @@
+use crate::common::query::Query;
 use crate::common::UserConnectionType;
 use crate::common::{poll_for_updates, query};
-use crate::post::{fetch_posts_by_ids, matches_post, Post};
+use crate::post::{fetch_posts_by_ids, fetch_posts_by_ids_and_query, Post};
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
 
 // max number of posts in timeline
 const POSTS_MAX_COUNT: usize = 500;
@@ -33,6 +33,29 @@ impl PostRef {
             created_at,
             updated_at,
         }
+    }
+
+    fn matches_query(&self, query: Query) -> bool {
+        // Check field filters first
+        for (field, value) in query.field_filters.iter() {
+            let matches = match field.as_str() {
+                "connection-type" | "connectiontype" => query::opt_text_exact_matches(
+                    self.created_by_connection_type
+                        .clone()
+                        .map(|t| t.to_string()),
+                    value,
+                ),
+                "created-by" | "createdby" => query::text_exact_matches(&self.created_by, value),
+                "content" => true,
+                _ => false, // Unknown field
+            };
+
+            if !matches {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
@@ -166,57 +189,6 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
     }
 }
 
-#[derive(Clone, Debug)]
-struct PostQueryMatcher {
-    query: query::Query,
-}
-
-impl Display for PostQueryMatcher {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PostQueryMatcher(query: {})", self.query)
-    }
-}
-
-impl PostQueryMatcher {
-    fn new(query: &str) -> Self {
-        let q = query::Query::new(query);
-
-        Self { query: q }
-    }
-
-    // Check if a post ref matches the query
-    fn matches_post_ref(&self, post_ref: PostRef) -> bool {
-        // Check field filters first
-        for (field, value) in self.query.field_filters.iter() {
-            let matches = match field.as_str() {
-                "connection-type" | "connectiontype" => query::opt_text_exact_matches(
-                    post_ref
-                        .created_by_connection_type
-                        .clone()
-                        .map(|t| t.to_string()),
-                    value,
-                ),
-                "created-by" | "createdby" => {
-                    query::text_exact_matches(&post_ref.created_by, value)
-                }
-                "content" => true,
-                _ => false, // Unknown field
-            };
-
-            if !matches {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    // Check if a post matches the query
-    fn matches_post(&self, post: Post) -> bool {
-        matches_post(post, self.query.clone())
-    }
-}
-
 #[agent_definition(mode = "ephemeral")]
 trait UserTimelineViewAgent {
     fn new() -> Self;
@@ -246,28 +218,23 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
         println!("get posts view - user id: {user_id}, query: {query}");
 
         if let Some(timeline_posts) = timeline_posts {
-            let query_matcher = PostQueryMatcher::new(&query);
+            let query = query::Query::new(&query);
 
-            println!("get posts view - user id: {user_id}, query matcher: {query_matcher}");
+            println!("get posts view - user id: {user_id}, query matcher: {query}");
 
             let timeline_posts = timeline_posts
                 .posts
                 .into_iter()
-                .filter(|p| query_matcher.matches_post_ref(p.clone()))
+                .filter(|p| p.matches_query(query.clone()))
                 .map(|p| p.post_id)
                 .collect::<Vec<_>>();
 
             if timeline_posts.is_empty() {
                 Some(vec![])
             } else {
-                let posts = fetch_posts_by_ids(&timeline_posts).await;
+                let posts = fetch_posts_by_ids_and_query(&timeline_posts, query).await;
 
-                let filtered_posts: Vec<Post> = posts
-                    .into_iter()
-                    .filter(|p| query_matcher.matches_post(p.clone()))
-                    .collect();
-
-                Some(filtered_posts)
+                Some(posts)
             }
         } else {
             None
