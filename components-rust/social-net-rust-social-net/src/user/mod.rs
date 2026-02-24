@@ -1,13 +1,7 @@
 use crate::common::{query, UserConnectionType};
 use email_address::EmailAddress;
 use futures::future::join_all;
-use golem_rust::bindings::golem::api::host::{
-    get_self_metadata, AgentAllFilter, AgentAnyFilter, AgentNameFilter, AgentPropertyFilter,
-    GetAgents, StringFilterComparator,
-};
-use golem_rust::golem_wasm::ComponentId;
 use golem_rust::{agent_definition, agent_implementation, Schema};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -134,6 +128,33 @@ impl User {
             should_disconnect
         }
     }
+
+    fn matches_query(&self, query: &query::Query) -> bool {
+        // Check field filters first
+        for (field, value) in query.field_filters.iter() {
+            let matches = match field.to_lowercase().as_str() {
+                "user-id" | "userid" => query::text_exact_matches(&self.user_id, value),
+                "name" => query::opt_text_matches(self.name.clone(), value),
+                "email" => query::opt_text_exact_matches(self.email.clone(), value),
+                "connected-users" | "connectedusers" => self
+                    .connected_users
+                    .iter()
+                    .any(|(id, _)| query::text_exact_matches(id, value)),
+                _ => false, // Unknown field
+            };
+            if !matches {
+                return false;
+            }
+        }
+
+        // Check text terms
+        query.terms.is_empty()
+            || query.terms.iter().any(|term| {
+                query::text_matches(&self.user_id, term)
+                    || query::opt_text_matches(self.name.clone(), term)
+                    || query::opt_text_matches(self.email.clone(), term)
+            })
+    }
 }
 
 #[agent_definition]
@@ -157,6 +178,8 @@ trait UserAgent {
         user_id: String,
         connection_type: UserConnectionType,
     ) -> Result<(), String>;
+
+    fn get_user_if_match(&self, query: query::Query) -> Option<User>;
 }
 
 struct UserAgentImpl {
@@ -166,7 +189,12 @@ struct UserAgentImpl {
 
 impl UserAgentImpl {
     fn get_state(&mut self) -> &mut User {
-        self.state.get_or_insert(User::new(self._id.clone()))
+        if self.state.is_none() {
+            let user = User::new(self._id.clone());
+            self.state = Some(user);
+            UserIndexAgentClient::get().trigger_add(self._id.clone());
+        }
+        self.state.as_mut().unwrap()
     }
 
     fn with_state<T>(&mut self, f: impl FnOnce(&mut User) -> T) -> T {
@@ -212,6 +240,7 @@ impl UserAgent for UserAgentImpl {
             println!("connect user - id: {user_id}, type: {connection_type}");
 
             let opposite_connection_type = connection_type.get_opposite();
+
             UserAgentClient::get(user_id.clone())
                 .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
         } else {
@@ -232,6 +261,7 @@ impl UserAgent for UserAgentImpl {
             println!("disconnect user - id: {user_id}, type: {connection_type}");
 
             let opposite_connection_type = connection_type.get_opposite();
+
             UserAgentClient::get(user_id.clone())
                 .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
         } else {
@@ -240,6 +270,10 @@ impl UserAgent for UserAgentImpl {
             );
         }
         Ok(())
+    }
+
+    fn get_user_if_match(&self, query: query::Query) -> Option<User> {
+        self.state.clone().filter(|user| user.matches_query(&query))
     }
 
     async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
@@ -253,84 +287,99 @@ impl UserAgent for UserAgentImpl {
     }
 }
 
-#[derive(Clone, Debug)]
-struct UserQueryMatcher {
-    query: query::Query,
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct UserIndexState {
+    pub user_ids: HashSet<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-impl UserQueryMatcher {
-    fn new(query: &str) -> Self {
-        let q = query::Query::new(query);
-
-        Self { query: q }
-    }
-
-    // Check if a user matches the query
-    fn matches(&self, user: User) -> bool {
-        // Check field filters first
-        for (field, value) in self.query.field_filters.iter() {
-            let matches = match field.to_lowercase().as_str() {
-                "user-id" | "userid" => query::text_exact_matches(&user.user_id, value),
-                "name" => query::opt_text_matches(user.name.clone(), value),
-                "email" => query::opt_text_exact_matches(user.email.clone(), value),
-                "connected-users" | "connectedusers" => user
-                    .connected_users
-                    .iter()
-                    .any(|(id, _)| query::text_exact_matches(id, value)),
-                _ => false, // Unknown field
-            };
-
-            if !matches {
-                return false;
-            }
+impl UserIndexState {
+    fn new() -> Self {
+        let now = chrono::Utc::now();
+        UserIndexState {
+            user_ids: HashSet::new(),
+            created_at: now,
+            updated_at: now,
         }
+    }
 
-        self.query.terms.is_empty()
-            || self.query.terms.iter().any(|term| {
-                query::text_matches(&user.user_id, term)
-                    || query::opt_text_matches(user.name.clone(), term)
-                    || query::opt_text_matches(user.email.clone(), term)
-            })
+    fn add_user(&mut self, user_id: String) -> bool {
+        if self.user_ids.insert(user_id.clone()) {
+            self.updated_at = chrono::Utc::now();
+            true
+        } else {
+            false
+        }
     }
 }
 
-fn get_user_agent_filter() -> AgentAnyFilter {
-    AgentAnyFilter {
-        filters: vec![AgentAllFilter {
-            filters: vec![AgentPropertyFilter::Name(AgentNameFilter {
-                comparator: StringFilterComparator::StartsWith,
-                value: "user-agent(".to_string(),
-            })],
-        }],
+#[agent_definition]
+trait UserIndexAgent {
+    fn new() -> Self;
+
+    fn add(&mut self, user_id: String) -> bool;
+
+    fn get_state(&self) -> UserIndexState;
+}
+
+struct UserIndexAgentImpl {
+    state: UserIndexState,
+}
+
+#[agent_implementation]
+impl UserIndexAgent for UserIndexAgentImpl {
+    fn new() -> Self {
+        UserIndexAgentImpl {
+            state: UserIndexState::new(),
+        }
+    }
+
+    fn add(&mut self, user_id: String) -> bool {
+        println!("add - user id: {}", user_id);
+        self.state.add_user(user_id)
+    }
+
+    fn get_state(&self) -> UserIndexState {
+        self.state.clone()
+    }
+
+    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+        let data: UserIndexState = crate::common::snapshot::deserialize(&bytes)?;
+        self.state = data;
+        Ok(())
+    }
+
+    async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
+        crate::common::snapshot::serialize(&self.state)
     }
 }
 
-fn get_user_agent_id(agent_name: &str) -> Option<String> {
-    Regex::new(r#"user-agent\("([^)]+)"\)"#)
-        .ok()?
-        .captures(agent_name)
-        .filter(|caps| caps.len() > 0)
-        .map(|caps| caps[1].to_string())
-}
-
-async fn get_users(
+async fn get_users_filtered(
     agent_ids: HashSet<String>,
-    matcher: UserQueryMatcher,
+    query: query::Query,
 ) -> Result<Vec<User>, String> {
-    let clients: Vec<UserAgentClient> = agent_ids
-        .into_iter()
-        .map(|agent_id| UserAgentClient::get(agent_id.to_string()))
-        .collect();
+    let user_ids: Vec<String> = agent_ids.into_iter().collect();
+    let mut result: Vec<User> = Vec::new();
 
-    let tasks: Vec<_> = clients.iter().map(|client| client.get_user()).collect();
+    for chunk in user_ids.chunks(10) {
+        let clients: Vec<UserAgentClient> = chunk
+            .iter()
+            .map(|agent_id| UserAgentClient::get(agent_id.to_string()))
+            .collect();
 
-    let responses = join_all(tasks).await;
+        // Use get_user_if_match instead of get_user()
+        let tasks: Vec<_> = clients
+            .iter()
+            .map(|client| client.get_user_if_match(query.clone()))
+            .collect();
 
-    let result: Vec<User> = responses
-        .into_iter()
-        .flatten()
-        .filter(|p| matcher.matches(p.clone()))
-        .collect();
+        let responses = join_all(tasks).await;
+
+        let chunk_users: Vec<User> = responses.into_iter().flatten().collect();
+
+        result.extend(chunk_users);
+    }
 
     Ok(result)
 }
@@ -342,42 +391,20 @@ trait UserSearchAgent {
     async fn search(&self, query: String) -> Result<Vec<User>, String>;
 }
 
-struct UserSearchAgentImpl {
-    component_id: ComponentId,
-}
+struct UserSearchAgentImpl;
 
 #[agent_implementation]
 impl UserSearchAgent for UserSearchAgentImpl {
     fn new() -> Self {
-        let component_id = get_self_metadata().agent_id.component_id;
-        UserSearchAgentImpl { component_id }
+        UserSearchAgentImpl
     }
 
     async fn search(&self, query: String) -> Result<Vec<User>, String> {
         println!("searching for users - query: {}", query);
-
-        let mut values: Vec<User> = Vec::new();
-        let matcher = UserQueryMatcher::new(&query);
-
-        let filter = get_user_agent_filter();
-
-        let get_agents = GetAgents::new(self.component_id, Some(&filter), false);
-
-        let mut processed_agent_ids: HashSet<String> = HashSet::new();
-
-        while let Some(agents) = get_agents.get_next() {
-            let agent_ids = agents
-                .iter()
-                .filter_map(|a| get_user_agent_id(a.agent_id.agent_id.as_str()))
-                .filter(|n| !processed_agent_ids.contains(n))
-                .collect::<HashSet<_>>();
-
-            let users = get_users(agent_ids.clone(), matcher.clone()).await?;
-            processed_agent_ids.extend(agent_ids);
-            values.extend(users);
-        }
-
-        Ok(values)
+        let query = query::Query::new(&query);
+        let index = UserIndexAgentClient::get().get_state().await;
+        let users = get_users_filtered(index.user_ids, query).await?;
+        Ok(users)
     }
 }
 
@@ -854,19 +881,57 @@ mod tests {
         assert_eq!(user.connected_users.len(), 2);
     }
 
+    fn create_test_state() -> UserIndexState {
+        UserIndexState::new()
+    }
+
     #[test]
-    fn test_user_query_matcher_or_logic() {
-        let mut user = User::new("user1".to_string());
-        user.set_name(Some("John Doe".to_string()));
-        let _ = user.set_email(Some("john@example.com".to_string()));
+    fn test_user_index_state_new() {
+        let state = create_test_state();
+        assert!(state.user_ids.is_empty());
+        assert_eq!(state.created_at, state.updated_at);
+    }
 
-        let matcher = UserQueryMatcher::new("John Smith"); // "John" matches, "Smith" doesn't
-        assert!(matcher.matches(user.clone()));
+    #[test]
+    fn test_add_user_success() {
+        let mut state = create_test_state();
+        let initial_updated_at = state.updated_at;
 
-        let matcher = UserQueryMatcher::new("Smith Doe"); // "Doe" matches, "Smith" doesn't
-        assert!(matcher.matches(user.clone()));
+        let result = state.add_user("user1".to_string());
 
-        let matcher = UserQueryMatcher::new("Smith Brown"); // Neither matches
-        assert!(!matcher.matches(user.clone()));
+        assert!(result);
+        assert_eq!(state.user_ids.len(), 1);
+        assert!(state.user_ids.contains("user1"));
+        assert!(state.updated_at > initial_updated_at);
+    }
+
+    #[test]
+    fn test_add_user_duplicate() {
+        let mut state = create_test_state();
+        state.add_user("user1".to_string());
+        let initial_updated_at = state.updated_at;
+
+        let result = state.add_user("user1".to_string());
+
+        assert!(!result);
+        assert_eq!(state.user_ids.len(), 1);
+        assert_eq!(state.updated_at, initial_updated_at);
+    }
+
+    #[test]
+    fn test_add_multiple_users() {
+        let mut state = create_test_state();
+
+        let result1 = state.add_user("user1".to_string());
+        let result2 = state.add_user("user2".to_string());
+        let result3 = state.add_user("user3".to_string());
+
+        assert!(result1);
+        assert!(result2);
+        assert!(result3);
+        assert_eq!(state.user_ids.len(), 3);
+        assert!(state.user_ids.contains("user1"));
+        assert!(state.user_ids.contains("user2"));
+        assert!(state.user_ids.contains("user3"));
     }
 }

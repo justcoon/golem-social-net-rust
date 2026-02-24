@@ -1,4 +1,3 @@
-use crate::common::query::Query;
 use crate::common::{query, LikeType, UserConnectionType};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
@@ -167,6 +166,29 @@ impl Post {
             None => Err("Comment not found".to_string()),
         }
     }
+
+    pub fn matches_query(&self, query: &query::Query) -> bool {
+        // Check field filters first
+        for (field, value) in query.field_filters.iter() {
+            let matches = match field.as_str() {
+                "post-id" => query::text_exact_matches(&self.post_id, value),
+                "content" => query::text_matches(&self.content, value),
+                "created-by" => query::text_exact_matches(&self.created_by, value),
+                _ => false, // Unknown field
+            };
+            if !matches {
+                return false;
+            }
+        }
+
+        // Check text terms
+        query.terms.is_empty()
+            || query.terms.iter().any(|term| {
+                query::text_matches(&self.post_id, term)
+                    || query::text_matches(&self.content, term)
+                    || query::text_matches(&self.created_by, term)
+            })
+    }
 }
 
 #[agent_definition]
@@ -174,6 +196,8 @@ trait PostAgent {
     fn new(id: String) -> Self;
 
     fn get_post(&self) -> Option<Post>;
+
+    fn get_post_if_match(&self, query: query::Query) -> Option<Post>;
 
     async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
 
@@ -226,6 +250,10 @@ impl PostAgent for PostAgentImpl {
 
     fn get_post(&self) -> Option<Post> {
         self.state.clone()
+    }
+
+    fn get_post_if_match(&self, query: query::Query) -> Option<Post> {
+        self.state.clone().filter(|post| post.matches_query(&query))
     }
 
     async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String> {
@@ -569,31 +597,27 @@ pub async fn fetch_posts_by_ids(post_ids: &[String]) -> Vec<Post> {
     result
 }
 
-// Check if a post matches the query
-pub fn matches_post(post: Post, query: Query) -> bool {
-    // Check field filters first
-    for (field, value) in query.field_filters.iter() {
-        let matches = match field.as_str() {
-            "created-by" | "createdby" => query::text_exact_matches(&post.created_by, value),
-            "content" => query::text_matches(&post.content, value),
-            "connection-type" | "connectiontype" => true,
-            "comments" => post
-                .comments
-                .iter()
-                .any(|(_, c)| query::text_matches(&c.content, value)),
-            _ => false, // Unknown field
-        };
+pub async fn fetch_posts_by_ids_and_query(post_ids: &[String], query: query::Query) -> Vec<Post> {
+    let mut result: Vec<Post> = vec![];
 
-        if !matches {
-            return false;
-        }
+    for chunk in post_ids.chunks(10) {
+        let clients = chunk
+            .iter()
+            .map(|post_id| PostAgentClient::get(post_id.clone()))
+            .collect::<Vec<_>>();
+
+        let tasks: Vec<_> = clients
+            .iter()
+            .map(|client| client.get_post_if_match(query.clone()))
+            .collect();
+        let responses = join_all(tasks).await;
+
+        let chunk_result: Vec<Post> = responses.into_iter().flatten().collect();
+
+        result.extend(chunk_result);
     }
 
-    query.terms.is_empty()
-        || query
-            .terms
-            .iter()
-            .any(|term| query::text_matches(&post.content, term))
+    result
 }
 
 #[cfg(test)]
@@ -1156,17 +1180,83 @@ mod tests {
     }
 
     #[test]
-    fn test_matches_post_or_logic() {
+    fn test_post_matches_query_basic() {
         let mut post = Post::new("post1".to_string());
         post.content = "Hello world from Rust".to_string();
+        post.created_by = "user1".to_string();
 
-        let query = Query::new("Hello Python"); // "Hello" matches, "Python" doesn't
-        assert!(matches_post(post.clone(), query));
+        let query = query::Query::new("Hello");
+        assert!(post.matches_query(&query));
 
-        let query = Query::new("Python Rust"); // "Rust" matches, "Python" doesn't
-        assert!(matches_post(post.clone(), query));
+        let query = query::Query::new("Python");
+        assert!(!post.matches_query(&query));
+    }
 
-        let query = Query::new("Python Java"); // Neither matches
-        assert!(!matches_post(post.clone(), query));
+    #[test]
+    fn test_post_matches_query_content() {
+        let mut post = Post::new("post1".to_string());
+        post.content = "Hello world from Rust".to_string();
+        post.created_by = "user1".to_string();
+
+        let query = query::Query::new("content:Hello");
+        assert!(post.matches_query(&query));
+
+        let query = query::Query::new("content:Python");
+        assert!(!post.matches_query(&query));
+    }
+
+    #[test]
+    fn test_post_matches_query_created_by() {
+        let mut post = Post::new("post1".to_string());
+        post.content = "Hello world".to_string();
+        post.created_by = "user1".to_string();
+
+        let query = query::Query::new("created-by:user1");
+        assert!(post.matches_query(&query));
+
+        let query = query::Query::new("created-by:user2");
+        assert!(!post.matches_query(&query));
+    }
+
+    #[test]
+    fn test_post_matches_query_multiple_filters() {
+        let mut post = Post::new("post1".to_string());
+        post.content = "Hello world from Rust".to_string();
+        post.created_by = "user1".to_string();
+
+        let query = query::Query::new("content:Hello created-by:user1");
+        assert!(post.matches_query(&query));
+
+        let query = query::Query::new("content:Hello created-by:user2");
+        assert!(!post.matches_query(&query));
+    }
+
+    #[test]
+    fn test_post_matches_query_terms() {
+        let mut post = Post::new("post1".to_string());
+        post.content = "Hello world from Rust".to_string();
+        post.created_by = "user1".to_string();
+
+        let query = query::Query::new("Hello");
+        assert!(post.matches_query(&query)); // Matches content
+
+        let query = query::Query::new("world");
+        assert!(post.matches_query(&query)); // Matches content
+
+        let query = query::Query::new("user1");
+        assert!(post.matches_query(&query)); // Matches created_by
+
+        let query = query::Query::new("unknown");
+        assert!(!post.matches_query(&query)); // No matches
+    }
+
+    #[test]
+    fn test_post_matches_query_wildcard() {
+        let mut post = Post::new("post1".to_string());
+        post.content = "Hello world from Rust".to_string();
+        post.created_by = "user1".to_string();
+
+        let query = query::Query::new("*");
+        assert!(post.matches_query(&query)); // Wildcard matches all
     }
 }

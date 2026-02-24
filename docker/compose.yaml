@@ -1,7 +1,7 @@
 x-aliases:
   blob-storage-env-vars: &blob-storage-env-vars
     GOLEM__BLOB_STORAGE__TYPE: "LocalFileSystem"
-    GOLEM__BLOB_STORAGE__CONFIG__ROOT: "/worker_executor_store"
+    GOLEM__BLOB_STORAGE__CONFIG__ROOT: "/blob_storage"
 
 services:
   router:
@@ -18,11 +18,12 @@ services:
       GOLEM_DEBUGGING_SERVICE_HOST: golem-debugging-service
       GOLEM_DEBUGGING_SERVICE_PORT: ${DEBUGGING_SERVICE_HTTP_PORT}
     depends_on:
-      - golem-worker-service
-#      - golem-shard-manager
-#      - golem-component-compilation-service
-      - golem-registry-service
-      - golem-debugging-service
+      golem-worker-service:
+        condition: service_healthy
+      golem-registry-service:
+        condition: service_healthy
+      golem-debugging-service:
+        condition: service_healthy
     volumes:
       - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
 
@@ -30,6 +31,11 @@ services:
     image: redis:${REDIS_IMAGE_VERSION}
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   postgres:
     image: postgres:${POSTGRES_IMAGE_VERSION}
@@ -52,7 +58,7 @@ services:
     environment:
       GOLEM_ENVIRONMENT: local
       RUST_BACKTRACE: 1
-      RUST_LOG=info,h2=warn,hyper=warn,tower: warn
+      RUST_LOG: "info,h2=warn,hyper=warn,tower=warn"
 
       GOLEM__HTTP_PORT: ${REGISTRY_SERVICE_HTTP_PORT}
       GOLEM__GRPC__PORT: ${REGISTRY_SERVICE_GRPC_PORT}
@@ -72,8 +78,16 @@ services:
 
       GOLEM__COMPILATION__CONFIG__HOST: golem-component-compilation-service
       GOLEM__COMPILATION__CONFIG__PORT: ${COMPONENT_COMPILATION_SERVICE_GRPC_PORT}
+    volumes:
+      - blob_storage:/blob_storage
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pidof", "golem-registry-service"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   golem-shard-manager:
     image: golemservices/golem-shard-manager:${GOLEM_IMAGES_VERSION}
@@ -81,7 +95,7 @@ services:
     restart: on-failure
     environment:
       RUST_BACKTRACE: 1
-      RUST_LOG=info,h2=warn,hyper=warn,tower: warn
+      RUST_LOG: "info,h2=warn,hyper=warn,tower=warn"
       GOLEM__ENVIRONMENT: local
 
       GOLEM__HTTP_PORT: ${SHARD_MANAGER_HTTP_PORT}
@@ -91,7 +105,13 @@ services:
       GOLEM__PERSISTENCE__CONFIG__HOST: redis
       GOLEM__PERSISTENCE__CONFIG__PORT: 6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pidof", "golem-shard-manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   golem-worker-service:
     image: golemservices/golem-worker-service:${GOLEM_IMAGES_VERSION}
@@ -99,7 +119,7 @@ services:
     restart: on-failure
     environment:
       RUST_BACKTRACE: 1
-      RUST_LOG=info,h2=warn,hyper=warn,tower: warn
+      RUST_LOG: "info,h2=warn,hyper=warn,tower=warn"
       GOLEM__ENVIRONMENT: local
 
       GOLEM__CUSTOM_REQUEST_PORT: ${WORKER_SERVICE_CUSTOM_REQUEST_PORT}
@@ -120,10 +140,19 @@ services:
     ports:
       - "${WORKER_SERVICE_CUSTOM_REQUEST_PORT}:${WORKER_SERVICE_CUSTOM_REQUEST_PORT}"
     depends_on:
-      - redis
-      - golem-shard-manager
-      - golem-registry-service
-      - golem-worker-executor
+      redis:
+        condition: service_healthy
+      golem-shard-manager:
+        condition: service_healthy
+      golem-registry-service:
+        condition: service_healthy
+      golem-worker-executor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pidof", "golem-worker-service"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   golem-component-compilation-service:
     image: golemservices/golem-component-compilation-service:${GOLEM_IMAGES_VERSION}
@@ -132,7 +161,7 @@ services:
     environment:
       <<: [*blob-storage-env-vars]
       RUST_BACKTRACE: 1
-      RUST_LOG=info,h2=warn,hyper=warn,tower: warn
+      RUST_LOG: "info,h2=warn,hyper=warn,tower=warn"
 
       GOLEM__HTTP_PORT: ${COMPONENT_COMPILATION_SERVICE_HTTP_PORT}
       GOLEM__GRPC__PORT: ${COMPONENT_COMPILATION_SERVICE_GRPC_PORT}
@@ -143,7 +172,13 @@ services:
     volumes:
       - blob_storage:/blob_storage
     depends_on:
-      - golem-registry-service
+      golem-registry-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pidof", "golem-component-compilation-service"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   golem-worker-executor:
     image: golemservices/golem-worker-executor:${GOLEM_IMAGES_VERSION}
@@ -182,9 +217,17 @@ services:
     volumes:
       - blob_storage:/blob_storage
     depends_on:
-      - redis
-      - golem-shard-manager
-      - golem-registry-service
+      redis:
+        condition: service_healthy
+      golem-shard-manager:
+        condition: service_healthy
+      golem-registry-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pidof", "worker-executor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   golem-debugging-service:
     image: golemservices/golem-debugging-service:${GOLEM_IMAGES_VERSION}
@@ -213,9 +256,17 @@ services:
     volumes:
       - blob_storage:/blob_storage
     depends_on:
-      - redis
-      - golem-shard-manager
-      - golem-registry-service
+      redis:
+        condition: service_healthy
+      golem-shard-manager:
+        condition: service_healthy
+      golem-registry-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pidof", "golem-debugging-service"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   redis_data:

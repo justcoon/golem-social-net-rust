@@ -27,7 +27,9 @@ The system is composed of a constellation of agents, split into two main categor
 The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations:
 
 1.  **Request Entry**: The **API Gateway** receives REST requests and routes them to the specific agent (e.g., `GET /users/{id}` -> `User Agent {id}`).
-2.  **Discovery**: A **User Search Agent** scans the network to discover specific `User Agents` matching a query.
+2.  **User Registration**: When a new `User Agent` is created for the first time, it automatically triggers the **User Index Agent** to register its ID, ensuring the central registry is always up-to-date.
+
+3.  **Efficient Search**: A **User Search Agent** queries the **User Index Agent** to get the complete list of user IDs, then fetches user profiles in parallel chunks for optimal performance.
 3.  **Fan-out Distribution**: When a user creates a post:
     *   The **User Posts Agent** initializes a new **Post Agent**.
     *   The **Post Agent** asynchronously invokes the **Timelines Updater Agent**. This is a durable, guaranteed operation.
@@ -50,6 +52,7 @@ The **User Agent** is the persistent identity of a user. It stores profile data 
 trait UserAgent {
     fn new(id: String) -> Self;
     fn get_user(&self) -> Option<User>;
+    fn get_user_if_match(&self, query: query::Query) -> Option<User>;
     fn set_name(&mut self, name: Option<String>) -> Result<(), String>;
     fn connect_user(&mut self, user_id: String, connection_type: UserConnectionType) -> Result<(), String>;
     // ... disconnect, etc.
@@ -64,6 +67,7 @@ The **Post Agent** manages the lifecycle of a single post, including its content
 trait PostAgent {
     fn new(id: String) -> Self;
     fn get_post(&self) -> Option<Post>;
+    fn get_post_if_match(&self, query: query::Query) -> Option<Post>;
     async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
     fn add_comment(&mut self, user_id: String, content: String, parent_comment_id: Option<String>) -> Result<String, String>;
     fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String>;
@@ -89,6 +93,7 @@ The **Chat Agent** handles a single chat room. It stores the message history and
 trait ChatAgent {
     fn new(id: String) -> Self;
     fn get_chat(&self) -> Option<Chat>;
+    fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
     fn add_message(&mut self, user_id: String, content: String) -> Result<String, String>;
     fn add_participants(&mut self, participants_ids: HashSet<String>) -> Result<(), String>;
 }
@@ -110,6 +115,22 @@ fn execute_chat_updates(
 ```
 
 ### 2. Collection & Registry Agents
+
+These stateful agents manage collections of references, provide centralized registry services, and link core entities together.
+
+#### User Index Agent
+The **User Index Agent** serves as the central registry for all users in the system, providing a single source of truth for user discovery and search operations.
+
+```rust
+#[agent_definition]
+trait UserIndexAgent {
+    fn new() -> Self;
+    fn add(&mut self, user_id: String) -> bool;
+    fn get_state(&self) -> UserIndexState;
+}
+```
+
+This agent maintains a durable set of all user IDs with automatic registration when new users are created. It eliminates the need for expensive agent discovery operations by providing the User Search Agent with a complete list of users.
 
 These stateful agents manage collections of references, linking core entities together.
 
@@ -364,7 +385,7 @@ trait UserChatsUpdatesAgent {
 These agents are stateless aggregators. They query multiple stateful agents in parallel to build complete views for the frontend.
 
 #### User Search Agent
-This agent leverages Golem's platform capabilities to scan the network for `User Agents` that match a specific name or criteria.
+This agent provides efficient user search by querying the **User Index Agent** for the complete list of user IDs, then fetching user profiles in parallel chunks using the `get_user_if_match` method.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
@@ -374,8 +395,10 @@ trait UserSearchAgent {
 }
 ```
 
+The implementation processes user IDs in chunks of 10 to balance performance and resource usage, applying sophisticated query matching against user profiles using the new `fetch_users_by_ids_and_query` function.
+
 #### User Posts View Agent
-It aggregates data by getting a list of post IDs from `User Posts Agent` and then fetching full content from each `Post Agent` in parallel.
+It aggregates data by getting a list of post IDs from `User Posts Agent` and then fetching full content from each `Post Agent` in parallel using the `get_post_if_match` method.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
@@ -385,41 +408,22 @@ trait UserPostsViewAgent {
 }
 ```
 
-This agent illustrates the power of the "scatter-gather" pattern in Golem. It initially retrieves the complete list of post IDs from the `User Posts Agent` and subsequently launches parallel requests to fetch the actual post data:
+This agent now leverages the  `fetch_posts_by_ids_and_query` function:
 
 ```rust
 async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
     let user_posts = UserPostsAgentClient::get(user_id.clone()).get_posts().await;
 
     if let Some(user_posts) = user_posts {
-        let query_matcher = PostQueryMatcher::new(&query);
+        let query = query::Query::new(&query);
         let user_posts = user_posts.posts;
         
         if user_posts.is_empty() {
             Some(vec![])
         } else {
-            let mut result: Vec<Post> = vec![];
-
-            for chunk in user_posts.chunks(10) {
-                let clients = chunk
-                    .iter()
-                    .map(|p| PostAgentClient::get(p.post_id.clone()))
-                    .collect::<Vec<_>>();
-
-                let tasks: Vec<_> = clients.iter().map(|client| client.get_post()).collect();
-
-                let responses = join_all(tasks).await;
-
-                let chunk_result: Vec<Post> = responses
-                    .into_iter()
-                    .flatten()
-                    .filter(|p| query_matcher.matches_post(p.clone()))
-                    .collect();
-
-                result.extend(chunk_result);
-            }
-
-            Some(result)
+            let post_ids: Vec<String> = user_posts.iter().map(|p| p.post_id.clone()).collect();
+            let posts = fetch_posts_by_ids_and_query(&post_ids, query).await;
+            Some(posts)
         }
     } else {
         None
@@ -428,7 +432,7 @@ async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec
 ```
 
 #### User Timeline View Agent
-This agent is similar to the **User Posts View Agent**, but it aggregates the user's timeline.
+This agent is similar to the **User Posts View Agent**, but it aggregates the user's timeline using the `fetch_posts_by_ids_and_query` function.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
@@ -439,7 +443,7 @@ trait UserTimelineViewAgent {
 ```
 
 #### User Chats View Agent
-This agent aggregates full chat states for the user's chat list.
+This agent aggregates full chat states for the user's chat list using the `fetch_chats_by_ids_and_query` function.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
