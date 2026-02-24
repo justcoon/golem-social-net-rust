@@ -368,7 +368,6 @@ async fn get_users_filtered(
             .map(|agent_id| UserAgentClient::get(agent_id.to_string()))
             .collect();
 
-        // Use get_user_if_match instead of get_user()
         let tasks: Vec<_> = clients
             .iter()
             .map(|client| client.get_user_if_match(query.clone()))

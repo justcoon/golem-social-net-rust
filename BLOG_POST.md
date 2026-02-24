@@ -408,7 +408,7 @@ trait UserPostsViewAgent {
 }
 ```
 
-This agent now leverages the  `fetch_posts_by_ids_and_query` function:
+This agent leverages the  `fetch_posts_by_ids_and_query` function:
 
 ```rust
 async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
