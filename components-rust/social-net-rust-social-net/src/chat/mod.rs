@@ -115,16 +115,16 @@ impl Chat {
         }
     }
 
-    pub fn matches_query(&self, query: &crate::common::query::Query) -> bool {
+    fn matches_query(&self, query: &query::Query) -> bool {
         // Check field filters first
         for (field, value) in query.field_filters.iter() {
             let matches = match field.as_str() {
-                "chat-id" => crate::common::query::text_exact_matches(&self.chat_id, value),
-                "created-by" => crate::common::query::text_exact_matches(&self.created_by, value),
+                "chat-id" => query::text_exact_matches(&self.chat_id, value),
+                "created-by" => query::text_exact_matches(&self.created_by, value),
                 "participants" => self
                     .participants
                     .iter()
-                    .any(|p| crate::common::query::text_exact_matches(p, value)),
+                    .any(|p| query::text_exact_matches(p, value)),
                 _ => false, // Unknown field
             };
             if !matches {
@@ -135,12 +135,12 @@ impl Chat {
         // Check text terms in chat_id, created_by, and message content
         query.terms.is_empty()
             || query.terms.iter().any(|term| {
-                crate::common::query::text_matches(&self.chat_id, term)
-                    || crate::common::query::text_matches(&self.created_by, term)
+                query::text_matches(&self.chat_id, term)
+                    || query::text_matches(&self.created_by, term)
                     || self
                         .messages
                         .iter()
-                        .any(|m| crate::common::query::text_matches(&m.content, term))
+                        .any(|m| query::text_matches(&m.content, term))
             })
     }
 }
@@ -151,7 +151,7 @@ trait ChatAgent {
 
     fn get_chat(&self) -> Option<Chat>;
 
-    fn get_chat_if_match(&self, query: crate::common::query::Query) -> Option<Chat>;
+    fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
 
     fn init_chat(
         &mut self,
@@ -747,10 +747,10 @@ mod tests {
         let mut chat = create_test_chat();
         chat.add_message("user1".to_string(), "Hello world from Rust".to_string());
 
-        let query = crate::common::query::Query::new("Hello");
+        let query = query::Query::new("Hello");
         assert!(chat.matches_query(&query));
 
-        let query = crate::common::query::Query::new("Python");
+        let query = query::Query::new("Python");
         assert!(!chat.matches_query(&query));
     }
 
@@ -759,10 +759,10 @@ mod tests {
         let mut chat = create_test_chat();
         chat.add_message("user1".to_string(), "Hello world".to_string());
 
-        let query = crate::common::query::Query::new("chat-id:test-chat-1");
+        let query = query::Query::new("chat-id:test-chat-1");
         assert!(chat.matches_query(&query));
 
-        let query = crate::common::query::Query::new("chat-id:other-chat");
+        let query = query::Query::new("chat-id:other-chat");
         assert!(!chat.matches_query(&query));
     }
 
@@ -771,10 +771,10 @@ mod tests {
         let mut chat = create_test_chat();
         chat.add_message("user1".to_string(), "Hello world".to_string());
 
-        let query = crate::common::query::Query::new("created-by:user1");
+        let query = query::Query::new("created-by:user1");
         assert!(chat.matches_query(&query));
 
-        let query = crate::common::query::Query::new("created-by:user2");
+        let query = query::Query::new("created-by:user2");
         assert!(!chat.matches_query(&query));
     }
 
@@ -783,13 +783,13 @@ mod tests {
         let mut chat = create_test_chat();
         chat.add_message("user1".to_string(), "Hello world".to_string());
 
-        let query = crate::common::query::Query::new("participants:user1");
+        let query = query::Query::new("participants:user1");
         assert!(chat.matches_query(&query));
 
-        let query = crate::common::query::Query::new("participants:user2");
+        let query = query::Query::new("participants:user2");
         assert!(chat.matches_query(&query));
 
-        let query = crate::common::query::Query::new("participants:user3");
+        let query = query::Query::new("participants:user3");
         assert!(!chat.matches_query(&query));
     }
 
@@ -799,13 +799,13 @@ mod tests {
         chat.add_message("user1".to_string(), "Hello world from Rust".to_string());
         chat.add_message("user2".to_string(), "Python programming".to_string());
 
-        let query = crate::common::query::Query::new("Rust");
+        let query = query::Query::new("Rust");
         assert!(chat.matches_query(&query)); // Matches first message
 
-        let query = crate::common::query::Query::new("Python");
+        let query = query::Query::new("Python");
         assert!(chat.matches_query(&query)); // Matches second message
 
-        let query = crate::common::query::Query::new("Java");
+        let query = query::Query::new("Java");
         assert!(!chat.matches_query(&query)); // No matches
     }
 
@@ -814,10 +814,10 @@ mod tests {
         let mut chat = create_test_chat();
         chat.add_message("user1".to_string(), "Hello world".to_string());
 
-        let query = crate::common::query::Query::new("chat-id:test-chat-1 created-by:user1");
+        let query = query::Query::new("chat-id:test-chat-1 created-by:user1");
         assert!(chat.matches_query(&query));
 
-        let query = crate::common::query::Query::new("chat-id:test-chat-1 created-by:user2");
+        let query = query::Query::new("chat-id:test-chat-1 created-by:user2");
         assert!(!chat.matches_query(&query));
     }
 
@@ -826,7 +826,7 @@ mod tests {
         let mut chat = create_test_chat();
         chat.add_message("user1".to_string(), "Hello world".to_string());
 
-        let query = crate::common::query::Query::new("*");
+        let query = query::Query::new("*");
         assert!(chat.matches_query(&query)); // Wildcard matches all
     }
 }
