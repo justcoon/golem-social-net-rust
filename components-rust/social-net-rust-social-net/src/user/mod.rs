@@ -362,7 +362,7 @@ async fn get_users_filtered(
     let user_ids: Vec<String> = agent_ids.into_iter().collect();
     let mut result: Vec<User> = Vec::new();
 
-    for chunk in user_ids.chunks(10) {
+    for chunk in user_ids.chunks(50) {
         let clients: Vec<UserAgentClient> = chunk
             .iter()
             .map(|agent_id| UserAgentClient::get(agent_id.to_string()))
@@ -381,6 +381,21 @@ async fn get_users_filtered(
     }
 
     Ok(result)
+}
+
+fn matches_query(user_id: String, query: &query::Query) -> bool {
+    for (field, value) in query.field_filters.iter() {
+        let matches = match field.as_str() {
+            "user-id" | "userid" => query::text_exact_matches(&user_id, value),
+            "name" | "email" | "connected-users" | "connectedusers" => true,
+            _ => false, // Unknown field
+        };
+        if !matches {
+            return false;
+        }
+    }
+
+    true
 }
 
 #[agent_definition(mode = "ephemeral")]
@@ -402,7 +417,13 @@ impl UserSearchAgent for UserSearchAgentImpl {
         println!("searching for users - query: {}", query);
         let query = query::Query::new(&query);
         let index = UserIndexAgentClient::get().get_state().await;
-        let users = get_users_filtered(index.user_ids, query).await?;
+        let ids = index
+            .user_ids
+            .into_iter()
+            .filter(|id| matches_query(id.clone(), &query))
+            .collect::<HashSet<_>>();
+
+        let users = get_users_filtered(ids, query).await?;
         Ok(users)
     }
 }

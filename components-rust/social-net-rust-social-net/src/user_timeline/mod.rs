@@ -39,6 +39,7 @@ impl PostRef {
         // Check field filters first
         for (field, value) in query.field_filters.iter() {
             let matches = match field.as_str() {
+                "post-id" | "postid" => query::text_exact_matches(&self.post_id, value),
                 "connection-type" | "connectiontype" => query::opt_text_exact_matches(
                     self.created_by_connection_type
                         .clone()
@@ -222,17 +223,17 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
 
             println!("get posts view - user id: {user_id}, query matcher: {query}");
 
-            let timeline_posts = timeline_posts
+            let post_ids = timeline_posts
                 .posts
                 .into_iter()
                 .filter(|p| p.matches_query(query.clone()))
                 .map(|p| p.post_id)
                 .collect::<Vec<_>>();
 
-            if timeline_posts.is_empty() {
+            if post_ids.is_empty() {
                 Some(vec![])
             } else {
-                let posts = fetch_posts_by_ids_and_query(&timeline_posts, query).await;
+                let posts = fetch_posts_by_ids_and_query(&post_ids, query).await;
 
                 Some(posts)
             }
