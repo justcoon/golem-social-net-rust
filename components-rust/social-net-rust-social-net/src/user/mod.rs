@@ -362,7 +362,7 @@ async fn get_users_filtered(
     let user_ids: Vec<String> = agent_ids.into_iter().collect();
     let mut result: Vec<User> = Vec::new();
 
-    for chunk in user_ids.chunks(50) {
+    for chunk in user_ids.chunks(20) {
         let clients: Vec<UserAgentClient> = chunk
             .iter()
             .map(|agent_id| UserAgentClient::get(agent_id.to_string()))
