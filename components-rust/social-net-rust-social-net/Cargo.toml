@@ -22,3 +22,4 @@ uuid =  { workspace = true }
 schemars = { workspace = true }
 regex = "1.12.2"
 futures = "0.3.31"
+md5 = "0.7.0"

@@ -14,7 +14,7 @@ The application follows a granular agent-based architecture, where different asp
 
 #### Stateful Agents (Persistent)
 - **User Agent**: Manages user profile information (name, email) and maintains a list of connections (friends and followers).
-- **User Index Agent**: Maintains a centralized registry of all user IDs in the system, automatically tracking when new users are created.
+- **User Index Agent**: Maintains a sharded registry of all user IDs in the system across multiple shards, automatically tracking when new users are created. Uses MD5-based consistent hashing for distribution.
 - **Post Agent**: Manages the lifecycle of an individual post, including its content, likes, and a hierarchical comment system.
 - **User Posts Agent**: Maintains a registry of all posts created by a specific user.
 - **User Timeline Agent**: Stores references to posts that should appear in a user's personal timeline.
@@ -23,7 +23,7 @@ The application follows a granular agent-based architecture, where different asp
 - **User Chats Agent**: Maintains a registry of all active chats for a specific user.
 
 #### Ephemeral Agents (View/Computational)
-- **User Search Agent**: Performs global user searches by querying the User Index Agent for user IDs and then retrieving user profiles in parallel chunks.
+- **User Search Agent**: Performs global user searches by querying all User Index Agent shards in parallel for user IDs and then retrieving user profiles in parallel chunks.
 - **User Posts View Agent**: Generates a detailed view of a user's posts by aggregating content from multiple Post Agents.
 - **User Timeline View Agent**: Generates a detailed view of a user's timeline by aggregating content from multiple Post Agents.
 - **User Timeline Updates Agent**: Implements a long-polling mechanism to provide real-time updates for a user's timeline.
@@ -48,8 +48,8 @@ The system manages interactions through a mix of synchronous RPC calls and async
    - It maps these requests to specific **Golem RPC** calls targeting the appropriate agent (e.g., `/users/{id}` maps to a `User Agent`).
 
 2. **Discovery & Search**:
-   - **User Agent** automatically registers new users with the **User Index Agent** when created.
-   - **User Search Agent** (ephemeral) queries the **User Index Agent** for all user IDs, then retrieves user profiles in parallel chunks for efficient processing.
+   - **User Agent** automatically registers new users with the appropriate **User Index Agent** shard based on MD5 hashing when created.
+   - **User Search Agent** (ephemeral) queries all **User Index Agent** shards in parallel for all user IDs, then retrieves user profiles in parallel chunks for efficient processing.
 
 3. **Content Aggregation (Materialized Views)**:
    - **View Agents** (User Posts View, User Timeline View) handle complex read operations.
