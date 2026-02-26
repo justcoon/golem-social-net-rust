@@ -7,18 +7,35 @@ use std::collections::HashSet;
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ChatRef {
     pub chat_id: String,
+    pub created_by: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl ChatRef {
-    fn new(chat_id: String) -> Self {
+    fn new(chat_id: String, created_by: String) -> Self {
         let now = chrono::Utc::now();
         ChatRef {
             chat_id,
+            created_by,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    pub fn matches_query(&self, query: &query::Query) -> bool {
+        for (field, value) in query.field_filters.iter() {
+            let matches = match field.as_str() {
+                "chat-id" | "chatid" => query::text_exact_matches(&self.chat_id, value),
+                "created-by" | "createdby" => query::text_exact_matches(&self.created_by, value),
+                "participants" => true,
+                _ => false, // Unknown field
+            };
+            if !matches {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -114,7 +131,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
                 let chat_id = uuid::Uuid::new_v4().to_string();
                 println!("create chat - id: {chat_id}");
 
-                let chat_ref = ChatRef::new(chat_id.clone());
+                let chat_ref = ChatRef::new(chat_id.clone(), u_id);
                 let created_at = chat_ref.created_at;
 
                 ChatAgentClient::get(chat_id.clone()).trigger_init_chat(
@@ -147,6 +164,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
 
                     state.chats.push(ChatRef {
                         chat_id,
+                        created_by,
                         created_at,
                         updated_at: created_at,
                     });
@@ -244,12 +262,16 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
 
             println!("get chats view - user id: {user_id}, query matcher: {query}");
 
-            let user_chats = user_chats.chats;
+            let chat_ids = user_chats
+                .chats
+                .iter()
+                .filter(|c| c.matches_query(&query))
+                .map(|p| p.chat_id.clone())
+                .collect::<Vec<_>>();
 
-            if user_chats.is_empty() {
+            if chat_ids.is_empty() {
                 Some(vec![])
             } else {
-                let chat_ids: Vec<String> = user_chats.iter().map(|p| p.chat_id.clone()).collect();
                 let chats = fetch_chats_by_ids_and_query(&chat_ids, query).await;
 
                 Some(chats)

@@ -171,9 +171,9 @@ impl Post {
         // Check field filters first
         for (field, value) in query.field_filters.iter() {
             let matches = match field.as_str() {
-                "post-id" => query::text_exact_matches(&self.post_id, value),
+                "post-id" | "postid" => query::text_exact_matches(&self.post_id, value),
                 "content" => query::text_matches(&self.content, value),
-                "created-by" => query::text_exact_matches(&self.created_by, value),
+                "created-by" | "createdby" => query::text_exact_matches(&self.created_by, value),
                 _ => false, // Unknown field
             };
             if !matches {

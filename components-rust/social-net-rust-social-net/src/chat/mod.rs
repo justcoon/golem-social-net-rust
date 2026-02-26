@@ -119,8 +119,8 @@ impl Chat {
         // Check field filters first
         for (field, value) in query.field_filters.iter() {
             let matches = match field.as_str() {
-                "chat-id" => query::text_exact_matches(&self.chat_id, value),
-                "created-by" => query::text_exact_matches(&self.created_by, value),
+                "chat-id" | "chatid" => query::text_exact_matches(&self.chat_id, value),
+                "created-by" | "createdby" => query::text_exact_matches(&self.created_by, value),
                 "participants" => self
                     .participants
                     .iter()
