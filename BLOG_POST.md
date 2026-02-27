@@ -27,7 +27,7 @@ The system is composed of a constellation of agents, split into two main categor
 The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations:
 
 1.  **Request Entry**: The **API Gateway** receives REST requests and routes them to the specific agent (e.g., `GET /users/{id}` -> `User Agent {id}`).
-2.  **User Registration**: When a new `User Agent` is created for the first time, it automatically triggers the **User Index Agent** to register its ID, ensuring the central registry is always up-to-date.
+2.  **User Registration**: When a new `User Agent` is created for the first time, it automatically determines the appropriate shard using MD5 hashing and triggers the corresponding **User Index Agent** shard to register its ID, ensuring the sharded registry is always up-to-date.
 
 3.  **Efficient Search**: A **User Search Agent** queries the **User Index Agent** to get the complete list of user IDs, then fetches user profiles in parallel chunks for optimal performance.
 3.  **Fan-out Distribution**: When a user creates a post:
@@ -119,18 +119,36 @@ fn execute_chat_updates(
 These stateful agents manage collections of references, provide centralized registry services, and link core entities together.
 
 #### User Index Agent
-The **User Index Agent** serves as the central registry for all users in the system, providing a single source of truth for user discovery and search operations.
+The **User Index Agent** serves as a sharded registry for all users in the system, providing a scalable source of truth for user discovery and search operations.
 
 ```rust
 #[agent_definition]
 trait UserIndexAgent {
-    fn new() -> Self;
+    fn new(shard_id: u32) -> Self;
     fn add(&mut self, user_id: String) -> bool;
     fn get_state(&self) -> UserIndexState;
 }
 ```
 
-This agent maintains a durable set of all user IDs with automatic registration when new users are created. It eliminates the need for expensive agent discovery operations by providing the User Search Agent with a complete list of users.
+**Sharding Implementation**: MD5-based consistent hashing distributes users across multiple shards, each shard validates users belong to it before accepting, and search operations query all shards in parallel.
+
+```rust
+const USER_INDEX_SHARDS: u32 = 8;
+
+pub fn get_user_index_shard(user_id: &str) -> u32 {
+    get_shard_number(user_id.to_string(), USER_INDEX_SHARDS)
+}
+
+// Shard validation in add method
+fn add(&mut self, user_id: String) -> bool {
+    let expected_shard = get_user_index_shard(&user_id);
+    if expected_shard == self.shard_id {
+        self.state.add_user(user_id)
+    } else {
+        false // Reject users that don't belong to this shard
+    }
+}
+```
 
 These stateful agents manage collections of references, linking core entities together.
 
@@ -385,7 +403,7 @@ trait UserChatsUpdatesAgent {
 These agents are stateless aggregators. They query multiple stateful agents in parallel to build complete views for the frontend.
 
 #### User Search Agent
-This agent provides efficient user search by querying the **User Index Agent** for the complete list of user IDs, then fetching user profiles in parallel chunks using the `get_user_if_match` method.
+This agent provides efficient user search by querying all **User Index Agent** shards in parallel for user IDs, then fetching user profiles in parallel chunks.
 
 ```rust
 #[agent_definition(mode = "ephemeral")]
@@ -395,7 +413,37 @@ trait UserSearchAgent {
 }
 ```
 
-The implementation processes user IDs in chunks of 10 to balance performance and resource usage, applying sophisticated query matching against user profiles using the new `fetch_users_by_ids_and_query` function.
+**Search Implementation**: The agent queries all User Index Agent shards concurrently, aggregates user IDs from all shards before filtering, and processes them in parallel chunks for performance.
+
+```rust
+async fn search(&self, query: String) -> Result<Vec<User>, String> {
+    let query = query::Query::new(&query);
+    
+    // Query all shards in parallel
+    let shard_futures: Vec<_> = (0..USER_INDEX_SHARDS)
+        .map(|shard_id| async move {
+            UserIndexAgentClient::get(shard_id).get_state().await
+        })
+        .collect();
+    
+    let shard_states = join_all(shard_futures).await;
+    
+    // Collect all user IDs
+    let mut all_user_ids = HashSet::new();
+    for state in shard_states {
+        all_user_ids.extend(state.user_ids);
+    }
+    
+    // Filter and fetch users
+    let ids = all_user_ids
+        .into_iter()
+        .filter(|id| matches_query(id.clone(), &query))
+        .collect::<HashSet<_>>();
+
+    let users = get_users_filtered(ids, query).await?;
+    Ok(users)
+}
+```
 
 #### User Posts View Agent
 It aggregates data by getting a list of post IDs from `User Posts Agent` and then fetching full content from each `Post Agent` in parallel using the `get_post_if_match` method.

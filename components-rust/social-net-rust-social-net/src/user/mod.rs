@@ -1,10 +1,17 @@
-use crate::common::{query, UserConnectionType};
+use crate::common::{get_shard_number, query, UserConnectionType};
 use email_address::EmailAddress;
 use futures::future::join_all;
 use golem_rust::{agent_definition, agent_implementation, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+
+/// Number of shards for UserIndexAgent
+const USER_INDEX_SHARDS: u32 = 8;
+
+pub fn get_user_index_shard(user_id: &str) -> u32 {
+    get_shard_number(user_id.to_string(), USER_INDEX_SHARDS)
+}
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct ConnectedUser {
@@ -192,7 +199,10 @@ impl UserAgentImpl {
         if self.state.is_none() {
             let user = User::new(self._id.clone());
             self.state = Some(user);
-            UserIndexAgentClient::get().trigger_add(self._id.clone());
+
+            // Get the shard for this user and add to the appropriate UserIndexAgent
+            let shard_id = get_user_index_shard(&self._id);
+            UserIndexAgentClient::get(shard_id).trigger_add(self._id.clone());
         }
         self.state.as_mut().unwrap()
     }
@@ -316,7 +326,7 @@ impl UserIndexState {
 
 #[agent_definition]
 trait UserIndexAgent {
-    fn new() -> Self;
+    fn new(shard_id: u32) -> Self;
 
     fn add(&mut self, user_id: String) -> bool;
 
@@ -324,20 +334,27 @@ trait UserIndexAgent {
 }
 
 struct UserIndexAgentImpl {
+    shard_id: u32,
     state: UserIndexState,
 }
 
 #[agent_implementation]
 impl UserIndexAgent for UserIndexAgentImpl {
-    fn new() -> Self {
+    fn new(shard_id: u32) -> Self {
         UserIndexAgentImpl {
+            shard_id,
             state: UserIndexState::new(),
         }
     }
 
     fn add(&mut self, user_id: String) -> bool {
-        println!("add - user id: {}", user_id);
-        self.state.add_user(user_id)
+        let expected_shard = get_user_index_shard(&user_id);
+        if expected_shard == self.shard_id {
+            println!("add - user id: {}, shard: {}", user_id, self.shard_id);
+            self.state.add_user(user_id)
+        } else {
+            false
+        }
     }
 
     fn get_state(&self) -> UserIndexState {
@@ -416,9 +433,21 @@ impl UserSearchAgent for UserSearchAgentImpl {
     async fn search(&self, query: String) -> Result<Vec<User>, String> {
         println!("searching for users - query: {}", query);
         let query = query::Query::new(&query);
-        let index = UserIndexAgentClient::get().get_state().await;
-        let ids = index
-            .user_ids
+
+        // Query all UserIndexAgent shards in parallel
+        let shard_futures: Vec<_> = (0..USER_INDEX_SHARDS)
+            .map(|shard_id| async move { UserIndexAgentClient::get(shard_id).get_state().await })
+            .collect();
+
+        let shard_states = join_all(shard_futures).await;
+
+        // Collect all user IDs from all shards
+        let mut all_user_ids = HashSet::new();
+        for state in shard_states {
+            all_user_ids.extend(state.user_ids);
+        }
+
+        let ids = all_user_ids
             .into_iter()
             .filter(|id| matches_query(id.clone(), &query))
             .collect::<HashSet<_>>();
@@ -432,6 +461,38 @@ impl UserSearchAgent for UserSearchAgentImpl {
 mod tests {
     use super::*;
     use crate::common::UserConnectionType;
+
+    #[test]
+    fn test_get_user_index_shard() {
+        let shard1 = get_user_index_shard("user1");
+        let shard2 = get_user_index_shard("user2");
+        let shard1_again = get_user_index_shard("user1");
+
+        assert!(shard1 < USER_INDEX_SHARDS);
+        assert!(shard2 < USER_INDEX_SHARDS);
+        assert_eq!(shard1, shard1_again); // Consistency check
+    }
+
+    #[test]
+    fn test_user_index_shards_distribution() {
+        let mut shard_counts = vec![0; USER_INDEX_SHARDS as usize];
+
+        // Test with 1000 different user IDs to see distribution
+        for i in 0..1000 {
+            let user_id = format!("user_{}", i);
+            let shard = get_user_index_shard(&user_id);
+            shard_counts[shard as usize] += 1;
+        }
+
+        // Each shard should have some entries (basic distribution test)
+        for count in &shard_counts {
+            assert!(*count > 0, "Shard should have at least one entry");
+        }
+
+        // Total should match our test count
+        let total: u32 = shard_counts.iter().sum();
+        assert_eq!(total, 1000);
+    }
 
     fn create_test_user() -> User {
         User::new("test-user-1".to_string())

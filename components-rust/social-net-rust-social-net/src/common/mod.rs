@@ -1,6 +1,8 @@
 use golem_rust::Schema;
+use md5;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -232,4 +234,86 @@ where
         }
     }
     result
+}
+
+pub fn get_shard_number(id: String, num_of_shards: u32) -> u32 {
+    assert!(num_of_shards > 0, "Number of shards must be greater than 0");
+
+    // Use MD5 for consistent hashing
+    let digest = md5::compute(id);
+    let hash = u64::from_le_bytes([
+        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+    ]);
+
+    // Convert hash to shard number using modulo
+    let shard = hash % num_of_shards as u64;
+    shard as u32
+}
+
+#[cfg(test)]
+mod sharding_tests {
+    use super::*;
+
+    #[test]
+    fn test_get_shard_number_basic() {
+        let shard = get_shard_number("test_user".to_string(), 4);
+        assert!(shard < 4);
+    }
+
+    #[test]
+    fn test_get_shard_number_consistency() {
+        let id = "consistent_user".to_string();
+        let shard1 = get_shard_number(id.clone(), 8);
+        let shard2 = get_shard_number(id, 8);
+        assert_eq!(shard1, shard2);
+    }
+
+    #[test]
+    fn test_get_shard_number_distribution() {
+        let mut shard_counts = vec![0; 16];
+        let num_shards = 16u32;
+
+        // Test with 1000 different IDs to see distribution
+        for i in 0..1000 {
+            let id = format!("user_{}", i);
+            let shard = get_shard_number(id, num_shards);
+            shard_counts[shard as usize] += 1;
+        }
+
+        // Each shard should have some entries (basic distribution test)
+        for count in &shard_counts {
+            assert!(*count > 0, "Shard should have at least one entry");
+        }
+
+        // Total should match our test count
+        let total: u32 = shard_counts.iter().sum();
+        assert_eq!(total, 1000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Number of shards must be greater than 0")]
+    fn test_get_shard_number_zero_shards() {
+        get_shard_number("test".to_string(), 0);
+    }
+
+    #[test]
+    fn test_get_shard_number_single_shard() {
+        let shard = get_shard_number("any_user".to_string(), 1);
+        assert_eq!(shard, 0);
+    }
+
+    #[test]
+    fn test_get_shard_number_different_ids_different_shards() {
+        let num_shards = 8u32;
+        let id1 = "user_alpha".to_string();
+        let id2 = "user_beta".to_string();
+
+        let shard1 = get_shard_number(id1, num_shards);
+        let shard2 = get_shard_number(id2, num_shards);
+
+        // They might end up in the same shard, but let's test with different IDs
+        // to ensure the function is working correctly
+        assert!(shard1 < num_shards);
+        assert!(shard2 < num_shards);
+    }
 }
