@@ -119,7 +119,7 @@ fn execute_chat_updates(
 These stateful agents manage collections of references, provide centralized registry services, and link core entities together.
 
 #### User Index Agent
-The **User Index Agent** serves as a sharded registry for all users in the system, providing a scalable source of truth for user discovery and search operations. It has been enhanced with horizontal sharding to improve performance and scalability.
+The **User Index Agent** serves as a sharded registry for all users in the system, providing a scalable source of truth for user discovery and search operations.
 
 ```rust
 #[agent_definition]
@@ -149,8 +149,6 @@ fn add(&mut self, user_id: String) -> bool {
     }
 }
 ```
-
-Benefits: linear scalability, even distribution, fault isolation, parallel processing
 
 These stateful agents manage collections of references, linking core entities together.
 
