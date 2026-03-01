@@ -13,12 +13,12 @@ pub fn rand_user_id() -> String {
 }
 
 pub fn rand_search_query() -> String {
-    let queries = vec!["name:\"User\"", "email:\"test.com\"", "u00", "u01"];
+    let queries = ["name:\"User\"", "email:\"test.com\"", "u00", "u01"];
     queries.choose(&mut rand::thread_rng()).unwrap().to_string()
 }
 
 pub fn rand_post_content() -> String {
-    let contents = vec![
+    let contents = [
         "Hello social network!",
         "Check out my new post.",
         "Golem is amazing.",
@@ -31,7 +31,7 @@ pub fn rand_post_content() -> String {
 }
 
 pub fn rand_comment_content() -> String {
-    let contents = vec![
+    let contents = [
         "Nice post!",
         "I agree.",
         "Interesting point.",
@@ -44,7 +44,7 @@ pub fn rand_comment_content() -> String {
 }
 
 pub fn rand_message_content() -> String {
-    let contents = vec![
+    let contents = [
         "Hey, how are you?",
         "Did you see the latest update?",
         "Let's meet tomorrow.",
@@ -66,7 +66,7 @@ pub fn rand_user_ids(count: usize) -> Vec<String> {
 }
 
 pub fn rand_like_type() -> crate::domain::common::LikeType {
-    let types = vec![
+    let types = [
         crate::domain::common::LikeType::Like,
         crate::domain::common::LikeType::Love,
         crate::domain::common::LikeType::Insightful,

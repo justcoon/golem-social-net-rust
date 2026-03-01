@@ -2,8 +2,8 @@ mod data;
 mod domain;
 mod goose_ext;
 
-use goose::prelude::*;
 use crate::goose_ext::GooseRequestExt;
+use goose::prelude::*;
 use std::time::Duration;
 
 #[tokio::main]
@@ -60,7 +60,10 @@ async fn get_user_data(user: &mut GooseUser) -> TransactionResult {
     let user_id = data::rand_user_id();
 
     let _response = user
-        .get_request("user-get", format!("/v1/social-net/users/{user_id}").as_str())
+        .get_request(
+            "user-get",
+            format!("/v1/social-net/users/{user_id}").as_str(),
+        )
         .await?;
 
     Ok(())
@@ -70,7 +73,10 @@ async fn search_users(user: &mut GooseUser) -> TransactionResult {
     let query = data::rand_search_query();
 
     let _response = user
-        .get_request("user-search", format!("/v1/social-net/users/search?query={query}").as_str())
+        .get_request(
+            "user-search",
+            format!("/v1/social-net/users/search?query={query}").as_str(),
+        )
         .await?;
 
     Ok(())
@@ -80,7 +86,10 @@ async fn get_user_posts(user: &mut GooseUser) -> TransactionResult {
     let user_id = data::rand_user_id();
 
     let _response = user
-        .get_request("user-posts-get", format!("/v1/social-net/users/{user_id}/posts").as_str())
+        .get_request(
+            "user-posts-get",
+            format!("/v1/social-net/users/{user_id}/posts").as_str(),
+        )
         .await?;
 
     Ok(())
@@ -104,7 +113,10 @@ async fn get_user_chat(user: &mut GooseUser) -> TransactionResult {
     let user_id = data::rand_user_id();
 
     let _response = user
-        .get_request("user-chats-get", format!("/v1/social-net/users/{user_id}/chats").as_str())
+        .get_request(
+            "user-chats-get",
+            format!("/v1/social-net/users/{user_id}/chats").as_str(),
+        )
         .await?;
 
     Ok(())
@@ -145,6 +157,7 @@ async fn create_post_comments_and_likes(user: &mut GooseUser) -> TransactionResu
         .await?;
 
     // 3. Add Comments and Like them
+    let mut last_comment_id = None;
     for _ in 0..2 {
         let comment_user_id = data::rand_user_id();
         let create_comment = domain::common::CreateComment {
@@ -163,6 +176,7 @@ async fn create_post_comments_and_likes(user: &mut GooseUser) -> TransactionResu
 
         let comment_id_res: domain::common::OkResult<String> = response.json().await?;
         let comment_id = comment_id_res.ok;
+        last_comment_id = Some(comment_id.clone());
 
         // Like Comment
         let set_comment_like = domain::common::SetLike {
@@ -174,6 +188,16 @@ async fn create_post_comments_and_likes(user: &mut GooseUser) -> TransactionResu
                 "comment-like",
                 format!("/v1/social-net/posts/{post_id}/comments/{comment_id}/likes").as_str(),
                 &set_comment_like,
+            )
+            .await?;
+    }
+
+    // 4. Delete one comment
+    if let Some(comment_id) = last_comment_id {
+        let _response = user
+            .delete_request(
+                "comment-delete",
+                format!("/v1/social-net/posts/{post_id}/comments/{comment_id}").as_str(),
             )
             .await?;
     }
@@ -210,6 +234,8 @@ async fn create_chat_messages_and_likes(user: &mut GooseUser) -> TransactionResu
     let mut all_participants = participants.clone();
     all_participants.push(creator_id.clone());
 
+    let mut message_ids = Vec::new();
+
     for p_id in all_participants.iter() {
         for _ in 0..2 {
             let add_message = domain::common::AddMessage {
@@ -227,6 +253,7 @@ async fn create_chat_messages_and_likes(user: &mut GooseUser) -> TransactionResu
 
             let message_id_res: domain::common::OkResult<String> = response.json().await?;
             let message_id = message_id_res.ok;
+            message_ids.push(message_id.clone());
 
             // 3. Like Message from 1-2 random users
             let like_count = rand::thread_rng().gen_range(1..3);
@@ -248,6 +275,16 @@ async fn create_chat_messages_and_likes(user: &mut GooseUser) -> TransactionResu
                     .await?;
             }
         }
+    }
+
+    // 4. Delete some messages
+    for message_id in message_ids.iter().take(2) {
+        let _response = user
+            .delete_request(
+                "chat-message-delete",
+                format!("/v1/social-net/chats/{chat_id}/messages/{message_id}").as_str(),
+            )
+            .await?;
     }
 
     Ok(())

@@ -27,7 +27,7 @@ This directory contains benchmarking tools and configurations for testing the pe
 
 ## Importing Test Data
 
-Before running benchmarks, you'll need to import test [data](./data/README.md) using
+Before running benchmarks, you'll need to import test [data](../data/README.md) using
 
 ## Running Benchmarks
 
