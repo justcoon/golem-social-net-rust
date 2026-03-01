@@ -21,4 +21,4 @@ wstd = {version = "=0.5.4", features = ["default", "json"] }
 chrono = "0.4"
 email_address = "0.2.9"
 uuid = { version = "1.18.1", features = ["v4"] }
-schemars = { version = "1.1.0", features = ["preserve_order"] }
+schemars = { version = "1.2.1", features = ["preserve_order"] }
