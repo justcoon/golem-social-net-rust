@@ -20,6 +20,6 @@ chrono = { workspace = true }
 email_address =  { workspace = true }
 uuid =  { workspace = true }
 schemars = { workspace = true }
-regex = "1.12.2"
+regex = "1.12.3"
 futures = "0.3.31"
 md5 = "0.7.0"
