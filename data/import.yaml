@@ -16,7 +16,7 @@ plan:
         Accept: 'application/json'
     with_items_from_csv:
       file_name: ./fixtures/users.csv
-      quote_char: "\'"
+      quote_char: "'"
   - name: Add user friends, index {{ index }}
     request:
       url: /v1/social-net/users/{{ item.user-id }}/connections
@@ -28,7 +28,7 @@ plan:
         Accept: 'application/json'
     with_items_from_csv:
       file_name: ./fixtures/friends.csv
-      quote_char: "\'"
+      quote_char: "'"
   - name: Add user followings, index {{ index }}
     request:
       url: /v1/social-net/users/{{ item.user-id }}/connections
@@ -40,7 +40,7 @@ plan:
         Accept: 'application/json'
     with_items_from_csv:
       file_name: ./fixtures/followings.csv
-      quote_char: "\'"
+      quote_char: "'"
   - name: Add user post, index {{ index }}
     request:
       url: /v1/social-net/users/{{ item.user-id }}/posts
@@ -52,6 +52,6 @@ plan:
         Accept: 'application/json'
     with_items_from_csv:
       file_name: ./fixtures/posts.csv
-      quote_char: "\'"
+      quote_char: "'"
 
 
