@@ -42,6 +42,22 @@ pub enum LikeType {
     Dislike,
 }
 
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub message: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct SuccessResponse {
+    pub message: String,
+}
+
+impl From<String> for ErrorResponse {
+    fn from(message: String) -> Self {
+        ErrorResponse { message }
+    }
+}
+
 impl LikeType {
     pub fn is_positive(&self) -> bool {
         !self.is_negative()

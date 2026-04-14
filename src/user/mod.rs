@@ -1,7 +1,7 @@
-use crate::common::{get_shard_number, query, UserConnectionType};
+use crate::common::{get_shard_number, query, UserConnectionType, ErrorResponse, SuccessResponse};
 use email_address::EmailAddress;
 use futures::future::join_all;
-use golem_rust::{agent_definition, agent_implementation, Schema};
+use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -164,27 +164,53 @@ impl User {
     }
 }
 
-#[agent_definition]
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct ConnectUserRequest {
+    pub user_id: String,
+    pub connection_type: UserConnectionType,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct DisconnectUserRequest {
+    pub user_id: String,
+    pub connection_type: UserConnectionType,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct SetNameRequest {
+    pub name: Option<String>,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct SetEmailRequest {
+    pub email: Option<String>,
+}
+
+
+#[agent_definition(mount = "/v1/social-net/users/{id}")]
 trait UserAgent {
     fn new(id: String) -> Self;
 
+    #[endpoint(get = "/")]
     fn get_user(&self) -> Option<User>;
 
-    fn set_name(&mut self, name: Option<String>) -> Result<(), String>;
+    #[endpoint(put = "/name")]
+    fn set_name(&mut self, request: SetNameRequest) -> Result<SuccessResponse, ErrorResponse>;
 
-    fn set_email(&mut self, email: Option<String>) -> Result<(), String>;
+    #[endpoint(put = "/email")]
+    fn set_email(&mut self, request: SetEmailRequest) -> Result<SuccessResponse, ErrorResponse>;
 
+    #[endpoint(put = "/connections")]
     fn connect_user(
         &mut self,
-        user_id: String,
-        connection_type: UserConnectionType,
-    ) -> Result<(), String>;
+        request: ConnectUserRequest,
+    ) -> Result<SuccessResponse, ErrorResponse>;
 
+    #[endpoint(delete = "/connections")]
     fn disconnect_user(
         &mut self,
-        user_id: String,
-        connection_type: UserConnectionType,
-    ) -> Result<(), String>;
+        request: DisconnectUserRequest,
+    ) -> Result<SuccessResponse, ErrorResponse>;
 
     fn get_user_if_match(&self, query: query::Query) -> Option<User>;
 }
@@ -225,61 +251,86 @@ impl UserAgent for UserAgentImpl {
         self.state.clone()
     }
 
-    fn set_name(&mut self, name: Option<String>) -> Result<(), String> {
+    fn set_name(&mut self, request: SetNameRequest) -> Result<SuccessResponse, ErrorResponse> {
         self.with_state(|state| {
-            println!("set name: {}", name.clone().unwrap_or("N/A".to_string()));
-            state.set_name(name);
-            Ok(())
+            println!("set name: {}", request.name.clone().unwrap_or("N/A".to_string()));
+            state.set_name(request.name);
+            Ok(SuccessResponse {
+                message: "name set".to_string(),
+            })
         })
     }
 
-    fn set_email(&mut self, email: Option<String>) -> Result<(), String> {
+    fn set_email(&mut self, request: SetEmailRequest) -> Result<SuccessResponse, ErrorResponse> {
         self.with_state(|state| {
-            println!("set email: {}", email.clone().unwrap_or("N/A".to_string()));
-            state.set_email(email)
+            println!("set email: {}", request.email.clone().unwrap_or("N/A".to_string()));
+            match state.set_email(request.email) {
+                Ok(_) => Ok(SuccessResponse {
+                    message: "email set".to_string(),
+                }),
+                Err(e) => Err(ErrorResponse { message: e }),
+            }
         })
     }
 
     fn connect_user(
         &mut self,
-        user_id: String,
-        connection_type: UserConnectionType,
-    ) -> Result<(), String> {
+        request: ConnectUserRequest,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         let state = self.get_state();
-        if state.connect_user(user_id.clone(), connection_type.clone()) {
-            println!("connect user - id: {user_id}, type: {connection_type}");
+        if state.connect_user(request.user_id.clone(), request.connection_type.clone()) {
+            println!("connect user - id: {}, type: {}", request.user_id, request.connection_type);
 
-            let opposite_connection_type = connection_type.get_opposite();
+            let opposite_connection_type = request.connection_type.get_opposite();
 
-            UserAgentClient::get(user_id.clone())
-                .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
+            UserAgentClient::get(request.user_id.clone())
+                .trigger_connect_user(ConnectUserRequest {
+                    user_id: state.user_id.clone(),
+                    connection_type: opposite_connection_type,
+                });
+            
+            Ok(SuccessResponse {
+                message: "connected".to_string(),
+            })
         } else {
             println!(
-                "connect user - id: {user_id}, type: {connection_type} - connection already exists or invalid"
+                "connect user - id: {}, type: {} - connection already exists or invalid",
+                request.user_id, request.connection_type
             );
+            Err(ErrorResponse {
+                message: "connection already exists or invalid".to_string(),
+            })
         }
-        Ok(())
     }
 
     fn disconnect_user(
         &mut self,
-        user_id: String,
-        connection_type: UserConnectionType,
-    ) -> Result<(), String> {
+        request: DisconnectUserRequest,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         let state = self.get_state();
-        if state.disconnect_user(user_id.clone(), connection_type.clone()) {
-            println!("disconnect user - id: {user_id}, type: {connection_type}");
+        if state.disconnect_user(request.user_id.clone(), request.connection_type.clone()) {
+            println!("disconnect user - id: {}, type: {}", request.user_id, request.connection_type);
 
-            let opposite_connection_type = connection_type.get_opposite();
+            let opposite_connection_type = request.connection_type.get_opposite();
 
-            UserAgentClient::get(user_id.clone())
-                .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
+            UserAgentClient::get(request.user_id.clone())
+                .trigger_disconnect_user(DisconnectUserRequest {
+                    user_id: state.user_id.clone(),
+                    connection_type: opposite_connection_type,
+                });
+            
+            Ok(SuccessResponse {
+                message: "disconnected".to_string(),
+            })
         } else {
             println!(
-                "disconnect user - id: {user_id}, type: {connection_type} - connection not found or invalid"
+                "disconnect user - id: {}, type: {} - connection not found or invalid",
+                request.user_id, request.connection_type
             );
+            Err(ErrorResponse {
+                message: "connection not found or invalid".to_string(),
+            })
         }
-        Ok(())
     }
 
     fn get_user_if_match(&self, query: query::Query) -> Option<User> {
@@ -415,11 +466,12 @@ fn matches_query(user_id: String, query: &query::Query) -> bool {
     true
 }
 
-#[agent_definition(mode = "ephemeral")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
 trait UserSearchAgent {
     fn new() -> Self;
 
-    async fn search(&self, query: String) -> Result<Vec<User>, String>;
+    #[endpoint(get = "/search")]
+    async fn search(&self, query: String) -> Result<Vec<User>, ErrorResponse>;
 }
 
 struct UserSearchAgentImpl;
@@ -430,9 +482,9 @@ impl UserSearchAgent for UserSearchAgentImpl {
         UserSearchAgentImpl
     }
 
-    async fn search(&self, query: String) -> Result<Vec<User>, String> {
+    async fn search(&self, query: String) -> Result<Vec<User>, ErrorResponse> {
         println!("searching for users - query: {}", query);
-        let query = query::Query::new(&query);
+        let query_obj = query::Query::new(&query);
 
         // Query all UserIndexAgent shards in parallel
         let shard_futures: Vec<_> = (0..USER_INDEX_SHARDS)
@@ -449,11 +501,13 @@ impl UserSearchAgent for UserSearchAgentImpl {
 
         let ids = all_user_ids
             .into_iter()
-            .filter(|id| matches_query(id.clone(), &query))
+            .filter(|id| matches_query(id.clone(), &query_obj))
             .collect::<HashSet<_>>();
 
-        let users = get_users_filtered(ids, query).await?;
-        Ok(users)
+        match get_users_filtered(ids, query_obj).await {
+            Ok(users) => Ok(users),
+            Err(e) => Err(ErrorResponse { message: e }),
+        }
     }
 }
 

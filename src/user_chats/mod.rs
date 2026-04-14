@@ -1,6 +1,6 @@
 use crate::chat::{fetch_chats_by_ids, fetch_chats_by_ids_and_query, Chat, ChatAgentClient};
-use crate::common::{poll_for_updates, query};
-use golem_rust::{agent_definition, agent_implementation, Schema};
+use crate::common::{poll_for_updates, query, ErrorResponse, SuccessResponse};
+use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -65,13 +65,25 @@ pub struct UserChatsUpdates {
     pub chats: Vec<ChatRef>,
 }
 
-#[agent_definition]
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct CreateChatRequest {
+    pub participants: HashSet<String>,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct CreateChatResponse {
+    pub chat_id: String,
+}
+
+#[agent_definition(mount = "/v1/social-net/users/{id}")]
 trait UserChatsAgent {
     fn new(id: String) -> Self;
 
+    #[endpoint(get = "/chats")]
     fn get_chats(&self) -> Option<UserChats>;
 
-    fn create_chat(&mut self, participants_ids: HashSet<String>) -> Result<String, String>;
+    #[endpoint(post = "/chats")]
+    fn create_chat(&mut self, request: CreateChatRequest) -> Result<CreateChatResponse, ErrorResponse>;
 
     fn add_chat(
         &mut self,
@@ -118,15 +130,17 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.state.clone()
     }
 
-    fn create_chat(&mut self, participants_ids: HashSet<String>) -> Result<String, String> {
+    fn create_chat(&mut self, request: CreateChatRequest) -> Result<CreateChatResponse, ErrorResponse> {
         self.with_state(|state| {
             let u_id = state.user_id.clone();
-            let participants_ids: HashSet<String> = participants_ids
+            let participants_ids: HashSet<String> = request.participants
                 .into_iter()
                 .filter(|id| id.clone() != u_id)
                 .collect::<HashSet<_>>();
             if participants_ids.is_empty() {
-                Err("Chat must have at least 2 participants".to_string())
+                Err(ErrorResponse {
+                    message: "Chat must have at least 2 participants".to_string(),
+                })
             } else {
                 let chat_id = uuid::Uuid::new_v4().to_string();
                 println!("create chat - id: {chat_id}");
@@ -143,7 +157,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
                 state.chats.push(chat_ref);
                 state.updated_at = created_at;
 
-                Ok(chat_id)
+                Ok(CreateChatResponse { chat_id })
             }
         })
     }

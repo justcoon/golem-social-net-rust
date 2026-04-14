@@ -1,8 +1,8 @@
-use crate::common::{query, LikeType, UserConnectionType};
+use crate::common::{query, LikeType, UserConnectionType, ErrorResponse, SuccessResponse};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
 use futures::future::join_all;
-use golem_rust::{agent_definition, agent_implementation, Schema};
+use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -191,37 +191,66 @@ impl Post {
     }
 }
 
-#[agent_definition]
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct SetLikeRequest {
+    pub user_id: String,
+    pub like_type: LikeType,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct AddCommentRequest {
+    pub content: String,
+    pub user_id: String,
+    pub parent_comment_id: Option<String>,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct SetCommentLikeRequest {
+    pub user_id: String,
+    pub like_type: LikeType,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct AddCommentResponse {
+    pub comment_id: String,
+}
+
+#[agent_definition(mount = "/v1/social-net/posts/{id}")]
 trait PostAgent {
     fn new(id: String) -> Self;
 
+    #[endpoint(get = "/")]
     fn get_post(&self) -> Option<Post>;
+
+    #[endpoint(put = "/likes")]
+    fn set_like(&mut self, request: SetLikeRequest) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(delete = "/likes/{user_id}")]
+    fn remove_like(&mut self, user_id: String) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(post = "/comments")]
+    fn add_comment(&mut self, request: AddCommentRequest) -> Result<AddCommentResponse, ErrorResponse>;
+
+    #[endpoint(delete = "/comments/{comment_id}")]
+    fn remove_comment(&mut self, comment_id: String) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(put = "/comments/{comment_id}/likes")]
+    fn set_comment_like(
+        &mut self,
+        comment_id: String,
+        request: SetCommentLikeRequest,
+    ) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(delete = "/comments/{comment_id}/likes/{user_id}")]
+    fn remove_comment_like(
+        &mut self,
+        comment_id: String,
+        user_id: String,
+    ) -> Result<SuccessResponse, ErrorResponse>;
 
     fn get_post_if_match(&self, query: query::Query) -> Option<Post>;
 
     async fn init_post(&mut self, user_id: String, content: String) -> Result<(), String>;
-
-    fn add_comment(
-        &mut self,
-        user_id: String,
-        content: String,
-        parent_comment_id: Option<String>,
-    ) -> Result<String, String>;
-
-    fn remove_comment(&mut self, comment_id: String) -> Result<(), String>;
-
-    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String>;
-
-    fn remove_like(&mut self, user_id: String) -> Result<(), String>;
-
-    fn set_comment_like(
-        &mut self,
-        comment_id: String,
-        user_id: String,
-        like_type: LikeType,
-    ) -> Result<(), String>;
-
-    fn remove_comment_like(&mut self, comment_id: String, user_id: String) -> Result<(), String>;
 }
 
 struct PostAgentImpl {
@@ -275,69 +304,90 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    fn add_comment(
-        &mut self,
-        user_id: String,
-        content: String,
-        parent_comment_id: Option<String>,
-    ) -> Result<String, String> {
+    fn add_comment(&mut self, request: AddCommentRequest) -> Result<AddCommentResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Post not exists".to_string())
+            Err(ErrorResponse {
+                message: "Post not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!(
                     "add comment - user id: {}, content: {}, parent id: {}",
-                    user_id,
-                    content,
-                    parent_comment_id.clone().unwrap_or("N/A".to_string())
+                    request.user_id,
+                    request.content,
+                    request.parent_comment_id.clone().unwrap_or("N/A".to_string())
                 );
                 if state.comments.len() >= COMMENTS_MAX_COUNT {
-                    Err("Max comment length".to_string())
+                    Err(ErrorResponse {
+                        message: "Max comment length".to_string(),
+                    })
                 } else {
-                    let comment_id =
-                        state.add_comment(user_id.clone(), content, parent_comment_id)?;
-                    TimelinesUpdaterAgentClient::get(user_id.clone())
+                    let comment_id = state.add_comment(
+                        request.user_id.clone(),
+                        request.content.clone(),
+                        request.parent_comment_id.clone(),
+                    )?;
+                    TimelinesUpdaterAgentClient::get(request.user_id.clone())
                         .trigger_post_updated(PostUpdate::from(state), false);
-                    Ok(comment_id)
+                    Ok(AddCommentResponse { comment_id })
                 }
             })
         }
     }
 
-    fn remove_comment(&mut self, comment_id: String) -> Result<(), String> {
+    fn remove_comment(&mut self, comment_id: String) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Post not exists".to_string())
+            Err(ErrorResponse {
+                message: "Post not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!("remove comment - comment id: {}", comment_id);
-                state.remove_comment(comment_id)?;
-                TimelinesUpdaterAgentClient::get(state.created_by.clone())
-                    .trigger_post_updated(PostUpdate::from(state), false);
-                Ok(())
+                match state.remove_comment(comment_id) {
+                    Ok(_) => {
+                        TimelinesUpdaterAgentClient::get(state.created_by.clone())
+                            .trigger_post_updated(PostUpdate::from(state), false);
+                        Ok(SuccessResponse {
+                            message: "removed".to_string(),
+                        })
+                    }
+                    Err(e) => Err(ErrorResponse { message: e }),
+                }
             })
         }
     }
 
-    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), String> {
+    fn set_like(&mut self, request: SetLikeRequest) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Post not exists".to_string())
+            Err(ErrorResponse {
+                message: "Post not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
-                println!("set like - user id: {}, like type: {}", user_id, like_type);
-                state.set_like(user_id, like_type);
-                Ok(())
+                println!(
+                    "set like - user id: {}, like type: {}",
+                    request.user_id, request.like_type
+                );
+                state.set_like(request.user_id.clone(), request.like_type);
+                Ok(SuccessResponse {
+                    message: "set".to_string(),
+                })
             })
         }
     }
 
-    fn remove_like(&mut self, user_id: String) -> Result<(), String> {
+    fn remove_like(&mut self, user_id: String) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Post not exists".to_string())
+            Err(ErrorResponse {
+                message: "Post not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!("remove like - user id: {}", user_id);
-                state.remove_like(user_id);
-                Ok(())
+                state.remove_like(user_id.clone());
+                Ok(SuccessResponse {
+                    message: "removed".to_string(),
+                })
             })
         }
     }
@@ -345,33 +395,53 @@ impl PostAgent for PostAgentImpl {
     fn set_comment_like(
         &mut self,
         comment_id: String,
-        user_id: String,
-        like_type: LikeType,
-    ) -> Result<(), String> {
+        request: SetCommentLikeRequest,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Post not exists".to_string())
+            Err(ErrorResponse {
+                message: "Post not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!(
                     "set comment like - comment id: {}, user id: {}, like type: {}",
-                    comment_id, user_id, like_type
+                    comment_id, request.user_id, request.like_type
                 );
-
-                state.set_comment_like(comment_id, user_id, like_type)
+                match state.set_comment_like(
+                    comment_id.clone(),
+                    request.user_id.clone(),
+                    request.like_type,
+                ) {
+                    Ok(_) => Ok(SuccessResponse {
+                        message: "set".to_string(),
+                    }),
+                    Err(e) => Err(ErrorResponse { message: e }),
+                }
             })
         }
     }
 
-    fn remove_comment_like(&mut self, comment_id: String, user_id: String) -> Result<(), String> {
+    fn remove_comment_like(
+        &mut self,
+        comment_id: String,
+        user_id: String,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Post not exists".to_string())
+            Err(ErrorResponse {
+                message: "Post not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!(
                     "remove comment like - comment id: {}, user id: {}",
                     comment_id, user_id
                 );
-                state.remove_comment_like(comment_id, user_id)
+                match state.remove_comment_like(comment_id, user_id.clone()) {
+                    Ok(_) => Ok(SuccessResponse {
+                        message: "removed".to_string(),
+                    }),
+                    Err(e) => Err(ErrorResponse { message: e }),
+                }
             })
         }
     }

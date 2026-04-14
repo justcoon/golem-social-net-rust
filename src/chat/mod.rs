@@ -1,8 +1,7 @@
-use crate::common::query;
-use crate::common::LikeType;
+use crate::common::{query, LikeType, ErrorResponse, SuccessResponse};
 use crate::user_chats::UserChatsAgentClient;
 use futures::future::join_all;
-use golem_rust::{agent_definition, agent_implementation, Schema};
+use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -145,11 +144,57 @@ impl Chat {
     }
 }
 
-#[agent_definition]
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct AddMessageRequest {
+    pub content: String,
+    pub user_id: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct AddMessageResponse {
+    pub message_id: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct AddParticipantsRequest {
+    pub participants: HashSet<String>,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct SetMessageLikeRequest {
+    pub user_id: String,
+    pub like_type: LikeType,
+}
+
+#[agent_definition(mount = "/v1/social-net/chats/{id}")]
 trait ChatAgent {
     fn new(id: String) -> Self;
 
+    #[endpoint(get = "/")]
     fn get_chat(&self) -> Option<Chat>;
+
+    #[endpoint(post = "/messages")]
+    fn add_message(&mut self, request: AddMessageRequest) -> Result<AddMessageResponse, ErrorResponse>;
+
+    #[endpoint(put = "/participants")]
+    fn add_participants(&mut self, request: AddParticipantsRequest) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(delete = "/messages/{message_id}")]
+    fn remove_message(&mut self, message_id: String) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(put = "/messages/{message_id}/likes")]
+    fn set_message_like(
+        &mut self,
+        message_id: String,
+        request: SetMessageLikeRequest,
+    ) -> Result<SuccessResponse, ErrorResponse>;
+
+    #[endpoint(delete = "/messages/{message_id}/likes/{user_id}")]
+    fn remove_message_like(
+        &mut self,
+        message_id: String,
+        user_id: String,
+    ) -> Result<SuccessResponse, ErrorResponse>;
 
     fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
 
@@ -159,21 +204,6 @@ trait ChatAgent {
         created_by: String,
         created_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), String>;
-
-    fn add_participants(&mut self, participants_ids: HashSet<String>) -> Result<(), String>;
-
-    fn add_message(&mut self, user_id: String, content: String) -> Result<String, String>;
-
-    fn remove_message(&mut self, message_id: String) -> Result<(), String>;
-
-    fn set_message_like(
-        &mut self,
-        message_id: String,
-        user_id: String,
-        like_type: LikeType,
-    ) -> Result<(), String>;
-
-    fn remove_message_like(&mut self, message_id: String, user_id: String) -> Result<(), String>;
 }
 
 struct ChatAgentImpl {
@@ -243,18 +273,22 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn add_participants(&mut self, participants_ids: HashSet<String>) -> Result<(), String> {
+    fn add_participants(&mut self, request: AddParticipantsRequest) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Chat not exists".to_string())
+            Err(ErrorResponse {
+                message: "Chat not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
-                let new_participants_ids: HashSet<String> = participants_ids
+                let new_participants_ids: HashSet<String> = request.participants
                     .into_iter()
                     .filter(|id| !state.participants.contains(id))
                     .collect();
 
                 if new_participants_ids.is_empty() {
-                    Err("No new participants".to_string())
+                    Err(ErrorResponse {
+                        message: "No new participants".to_string(),
+                    })
                 } else {
                     println!(
                         "add participants - new participants: {}",
@@ -277,36 +311,48 @@ impl ChatAgent for ChatAgentImpl {
                         old_participants_ids,
                         state.updated_at,
                     );
-                    Ok(())
+
+                    Ok(SuccessResponse {
+                        message: "updated".to_string(),
+                    })
                 }
             })
         }
     }
 
-    fn add_message(&mut self, user_id: String, content: String) -> Result<String, String> {
+    fn add_message(&mut self, request: AddMessageRequest) -> Result<AddMessageResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Chat not exists".to_string())
+            Err(ErrorResponse {
+                message: "Chat not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
-                println!("add message - user id: {}, content: {}", user_id, content);
+                println!(
+                    "add message - user id: {}, content: {}",
+                    request.user_id, request.content
+                );
                 if state.messages.len() >= MAX_CHAT_LENGTH {
-                    Err("Max chat length".to_string())
+                    Err(ErrorResponse {
+                        message: "Max chat length".to_string(),
+                    })
                 } else {
-                    let id = state.add_message(user_id.clone(), content);
+                    let id = state.add_message(request.user_id.clone(), request.content.clone());
                     execute_chat_updates(
                         state.chat_id.clone(),
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(id)
+                    Ok(AddMessageResponse { message_id: id })
                 }
             })
         }
     }
 
-    fn remove_message(&mut self, message_id: String) -> Result<(), String> {
+    fn remove_message(&mut self, message_id: String) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Chat not exists".to_string())
+            Err(ErrorResponse {
+                message: "Chat not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!("remove message - message id: {}", message_id);
@@ -316,9 +362,13 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(())
+                    Ok(SuccessResponse {
+                        message: "removed".to_string(),
+                    })
                 } else {
-                    Err("Message not found".to_string())
+                    Err(ErrorResponse {
+                        message: "Message not found".to_string(),
+                    })
                 }
             })
         }
@@ -327,49 +377,64 @@ impl ChatAgent for ChatAgentImpl {
     fn set_message_like(
         &mut self,
         message_id: String,
-        user_id: String,
-        like_type: LikeType,
-    ) -> Result<(), String> {
+        request: SetMessageLikeRequest,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Chat not exists".to_string())
+            Err(ErrorResponse {
+                message: "Chat not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!(
                     "set message like - message id: {}, user id: {}, like type: {}",
-                    message_id, user_id, like_type
+                    message_id, request.user_id, request.like_type
                 );
-                if state.set_message_like(message_id, user_id, like_type) {
+                if state.set_message_like(
+                    message_id.clone(),
+                    request.user_id.clone(),
+                    request.like_type,
+                ) {
                     execute_chat_updates(
                         state.chat_id.clone(),
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(())
+                    Ok(SuccessResponse {
+                        message: "set".to_string(),
+                    })
                 } else {
-                    Err("Message not found".to_string())
+                    Err(ErrorResponse {
+                        message: "Message not found".to_string(),
+                    })
                 }
             })
         }
     }
 
-    fn remove_message_like(&mut self, message_id: String, user_id: String) -> Result<(), String> {
+    fn remove_message_like(&mut self, message_id: String, user_id: String) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err("Chat not exists".to_string())
+            Err(ErrorResponse {
+                message: "Chat not exists".to_string(),
+            })
         } else {
             self.with_state(|state| {
                 println!(
                     "remove message like - chat id: {}, user id: {}",
                     message_id, user_id
                 );
-                if state.remove_message_like(message_id, user_id) {
+                if state.remove_message_like(message_id, user_id.clone()) {
                     execute_chat_updates(
                         state.chat_id.clone(),
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(())
+                    Ok(SuccessResponse {
+                        message: "removed".to_string(),
+                    })
                 } else {
-                    Err("Message not found".to_string())
+                    Err(ErrorResponse {
+                        message: "Message not found".to_string(),
+                    })
                 }
             })
         }

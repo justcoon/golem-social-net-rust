@@ -35,4 +35,9 @@ httpApi:
     local:
     - domain: localhost:9006
       agents:
-        Tasks: {}
+        UserAgent: {}
+        UserSearchAgent: {}
+        UserPostsAgent: {}
+        UserChatsAgent: {}
+        PostAgent: {}
+        ChatAgent: {}

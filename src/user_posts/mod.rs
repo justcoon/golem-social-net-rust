@@ -1,6 +1,6 @@
-use crate::common::query;
+use crate::common::{query, ErrorResponse, SuccessResponse};
 use crate::post::{fetch_posts_by_ids, fetch_posts_by_ids_and_query, Post, PostAgentClient};
-use golem_rust::{agent_definition, agent_implementation, Schema};
+use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
 use serde::{Deserialize, Serialize};
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
@@ -44,16 +44,28 @@ pub struct UserPostsUpdates {
     pub posts: Vec<PostRef>,
 }
 
-#[agent_definition]
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct CreatePostRequest {
+    pub content: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct CreatePostResponse {
+    pub post_id: String,
+}
+
+#[agent_definition(mount = "/v1/social-net/users/{id}")]
 trait UserPostsAgent {
     fn new(id: String) -> Self;
 
+    #[endpoint(get = "/posts")]
     fn get_posts(&self) -> Option<UserPosts>;
+
+    #[endpoint(post = "/posts")]
+    fn create_post(&mut self, request: CreatePostRequest) -> Result<CreatePostResponse, ErrorResponse>;
 
     fn get_updates(&self, updates_since: chrono::DateTime<chrono::Utc>)
         -> Option<UserPostsUpdates>;
-
-    fn create_post(&mut self, content: String) -> Result<String, String>;
 }
 
 struct UserPostsAgentImpl {
@@ -107,7 +119,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
         }
     }
 
-    fn create_post(&mut self, content: String) -> Result<String, String> {
+    fn create_post(&mut self, request: CreatePostRequest) -> Result<CreatePostResponse, ErrorResponse> {
         self.with_state(|state| {
             let post_id = uuid::Uuid::new_v4().to_string();
 
@@ -115,12 +127,12 @@ impl UserPostsAgent for UserPostsAgentImpl {
 
             let post_ref = PostRef::new(post_id.clone());
 
-            PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
+            PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), request.content);
 
             state.updated_at = post_ref.created_at;
             state.posts.push(post_ref);
 
-            Ok(post_id)
+            Ok(CreatePostResponse { post_id })
         })
     }
 
