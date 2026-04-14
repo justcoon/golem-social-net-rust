@@ -1,6 +1,6 @@
-use crate::chat::{fetch_chats_by_ids, fetch_chats_by_ids_and_query, Chat, ChatAgentClient};
-use crate::common::{poll_for_updates, query, ErrorResponse, SuccessResponse};
-use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
+use crate::chat::{Chat, ChatAgentClient, fetch_chats_by_ids, fetch_chats_by_ids_and_query};
+use crate::common::{ErrorResponse, poll_for_updates, query};
+use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -83,7 +83,10 @@ trait UserChatsAgent {
     fn get_chats(&self) -> Option<UserChats>;
 
     #[endpoint(post = "/chats")]
-    fn create_chat(&mut self, request: CreateChatRequest) -> Result<CreateChatResponse, ErrorResponse>;
+    fn create_chat(
+        &mut self,
+        request: CreateChatRequest,
+    ) -> Result<CreateChatResponse, ErrorResponse>;
 
     fn add_chat(
         &mut self,
@@ -99,7 +102,7 @@ trait UserChatsAgent {
     ) -> Result<(), String>;
 
     fn get_updates(&self, updates_since: chrono::DateTime<chrono::Utc>)
-        -> Option<UserChatsUpdates>;
+    -> Option<UserChatsUpdates>;
 }
 
 struct UserChatsAgentImpl {
@@ -130,10 +133,14 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.state.clone()
     }
 
-    fn create_chat(&mut self, request: CreateChatRequest) -> Result<CreateChatResponse, ErrorResponse> {
+    fn create_chat(
+        &mut self,
+        request: CreateChatRequest,
+    ) -> Result<CreateChatResponse, ErrorResponse> {
         self.with_state(|state| {
             let u_id = state.user_id.clone();
-            let participants_ids: HashSet<String> = request.participants
+            let participants_ids: HashSet<String> = request
+                .participants
                 .into_iter()
                 .filter(|id| id.clone() != u_id)
                 .collect::<HashSet<_>>();
@@ -245,10 +252,11 @@ impl UserChatsAgent for UserChatsAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
 trait UserChatsViewAgent {
     fn new() -> Self;
 
+    #[endpoint(get = "/{user_id}/chats/search")]
     async fn get_chats_view(&mut self, user_id: String, query: String) -> Option<Vec<Chat>>;
 
     async fn get_chats_updates_view(

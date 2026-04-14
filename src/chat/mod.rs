@@ -1,7 +1,7 @@
-use crate::common::{query, LikeType, ErrorResponse, SuccessResponse};
+use crate::common::{ErrorResponse, LikeType, SuccessResponse, query};
 use crate::user_chats::UserChatsAgentClient;
 use futures::future::join_all;
-use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
+use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -174,10 +174,16 @@ trait ChatAgent {
     fn get_chat(&self) -> Option<Chat>;
 
     #[endpoint(post = "/messages")]
-    fn add_message(&mut self, request: AddMessageRequest) -> Result<AddMessageResponse, ErrorResponse>;
+    fn add_message(
+        &mut self,
+        request: AddMessageRequest,
+    ) -> Result<AddMessageResponse, ErrorResponse>;
 
     #[endpoint(put = "/participants")]
-    fn add_participants(&mut self, request: AddParticipantsRequest) -> Result<SuccessResponse, ErrorResponse>;
+    fn add_participants(
+        &mut self,
+        request: AddParticipantsRequest,
+    ) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}")]
     fn remove_message(&mut self, message_id: String) -> Result<SuccessResponse, ErrorResponse>;
@@ -273,14 +279,18 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn add_participants(&mut self, request: AddParticipantsRequest) -> Result<SuccessResponse, ErrorResponse> {
+    fn add_participants(
+        &mut self,
+        request: AddParticipantsRequest,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),
             })
         } else {
             self.with_state(|state| {
-                let new_participants_ids: HashSet<String> = request.participants
+                let new_participants_ids: HashSet<String> = request
+                    .participants
                     .into_iter()
                     .filter(|id| !state.participants.contains(id))
                     .collect();
@@ -320,7 +330,10 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn add_message(&mut self, request: AddMessageRequest) -> Result<AddMessageResponse, ErrorResponse> {
+    fn add_message(
+        &mut self,
+        request: AddMessageRequest,
+    ) -> Result<AddMessageResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),
@@ -411,7 +424,11 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn remove_message_like(&mut self, message_id: String, user_id: String) -> Result<SuccessResponse, ErrorResponse> {
+    fn remove_message_like(
+        &mut self,
+        message_id: String,
+        user_id: String,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),

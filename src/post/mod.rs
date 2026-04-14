@@ -1,8 +1,8 @@
-use crate::common::{query, LikeType, UserConnectionType, ErrorResponse, SuccessResponse};
+use crate::common::{ErrorResponse, LikeType, SuccessResponse, UserConnectionType, query};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
 use futures::future::join_all;
-use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
+use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -229,7 +229,10 @@ trait PostAgent {
     fn remove_like(&mut self, user_id: String) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(post = "/comments")]
-    fn add_comment(&mut self, request: AddCommentRequest) -> Result<AddCommentResponse, ErrorResponse>;
+    fn add_comment(
+        &mut self,
+        request: AddCommentRequest,
+    ) -> Result<AddCommentResponse, ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}")]
     fn remove_comment(&mut self, comment_id: String) -> Result<SuccessResponse, ErrorResponse>;
@@ -304,7 +307,10 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    fn add_comment(&mut self, request: AddCommentRequest) -> Result<AddCommentResponse, ErrorResponse> {
+    fn add_comment(
+        &mut self,
+        request: AddCommentRequest,
+    ) -> Result<AddCommentResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -315,7 +321,10 @@ impl PostAgent for PostAgentImpl {
                     "add comment - user id: {}, content: {}, parent id: {}",
                     request.user_id,
                     request.content,
-                    request.parent_comment_id.clone().unwrap_or("N/A".to_string())
+                    request
+                        .parent_comment_id
+                        .clone()
+                        .unwrap_or("N/A".to_string())
                 );
                 if state.comments.len() >= COMMENTS_MAX_COUNT {
                     Err(ErrorResponse {
@@ -1087,27 +1096,31 @@ mod tests {
             .unwrap();
 
         // Add multiple likes to comment
-        assert!(post
-            .set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Like)
-            .is_ok());
-        assert!(post
-            .set_comment_like(comment_id.clone(), "user4".to_string(), LikeType::Love)
-            .is_ok());
-        assert!(post
-            .set_comment_like(
+        assert!(
+            post.set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Like)
+                .is_ok()
+        );
+        assert!(
+            post.set_comment_like(comment_id.clone(), "user4".to_string(), LikeType::Love)
+                .is_ok()
+        );
+        assert!(
+            post.set_comment_like(
                 comment_id.clone(),
                 "user5".to_string(),
                 LikeType::Insightful
             )
-            .is_ok());
+            .is_ok()
+        );
 
         let comment = post.comments.get(&comment_id).unwrap();
         assert_eq!(comment.likes.len(), 3);
 
         // Remove one like
-        assert!(post
-            .remove_comment_like(comment_id.clone(), "user4".to_string())
-            .is_ok());
+        assert!(
+            post.remove_comment_like(comment_id.clone(), "user4".to_string())
+                .is_ok()
+        );
 
         let comment = post.comments.get(&comment_id).unwrap();
         assert_eq!(comment.likes.len(), 2);
@@ -1116,9 +1129,10 @@ mod tests {
         assert!(comment.likes.get("user4").is_none());
 
         // Override remaining like
-        assert!(post
-            .set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Dislike)
-            .is_ok());
+        assert!(
+            post.set_comment_like(comment_id.clone(), "user3".to_string(), LikeType::Dislike)
+                .is_ok()
+        );
 
         let comment = post.comments.get(&comment_id).unwrap();
         assert_eq!(comment.likes.len(), 2);
@@ -1165,9 +1179,10 @@ mod tests {
 
         for (i, like_type) in like_types.iter().enumerate() {
             let user_id = format!("user{}", i + 3);
-            assert!(post
-                .set_comment_like(comment_id.clone(), user_id, like_type.clone())
-                .is_ok());
+            assert!(
+                post.set_comment_like(comment_id.clone(), user_id, like_type.clone())
+                    .is_ok()
+            );
         }
 
         let comment = post.comments.get(&comment_id).unwrap();

@@ -41,3 +41,6 @@ httpApi:
         UserChatsAgent: {}
         PostAgent: {}
         ChatAgent: {}
+        UserChatsViewAgent: {}
+        UserPostsViewAgent: {}
+        UserTimelineViewAgent: {}

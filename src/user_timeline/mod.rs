@@ -1,8 +1,7 @@
-use crate::common::query::Query;
 use crate::common::UserConnectionType;
-use crate::common::{poll_for_updates, query};
-use crate::post::{fetch_posts_by_ids, fetch_posts_by_ids_and_query, Post};
-use golem_rust::{agent_definition, agent_implementation, Schema};
+use crate::common::{poll_for_updates, query, query::Query};
+use crate::post::{Post, fetch_posts_by_ids, fetch_posts_by_ids_and_query};
+use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -190,16 +189,18 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
 trait UserTimelineViewAgent {
     fn new() -> Self;
 
+    #[endpoint(get = "/{user_id}/timeline/posts")]
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
 
+    #[endpoint(get = "/{user_id}/timeline/posts/updates")]
     async fn get_posts_updates_view(
         &mut self,
         user_id: String,
-        updates_since: chrono::DateTime<chrono::Utc>,
+        since: Option<String>,
     ) -> Option<Vec<Post>>;
 }
 
@@ -219,7 +220,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
         println!("get posts view - user id: {user_id}, query: {query}");
 
         if let Some(timeline_posts) = timeline_posts {
-            let query = query::Query::new(&query);
+            let query = Query::new(&query);
 
             println!("get posts view - user id: {user_id}, query matcher: {query}");
 
@@ -245,13 +246,21 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
     async fn get_posts_updates_view(
         &mut self,
         user_id: String,
-        updates_since: chrono::DateTime<chrono::Utc>,
+        since: Option<String>,
     ) -> Option<Vec<Post>> {
+        let updates_since = since.map(|s| {
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .unwrap_or_default()
+                .into()
+        });
         let timeline_updates = UserTimelineAgentClient::get(user_id.clone())
-            .get_updates(updates_since)
+            .get_updates(updates_since.unwrap_or_else(|| chrono::Utc::now()))
             .await;
 
-        println!("get posts updates view - user id: {user_id}, updates since: {updates_since}");
+        println!(
+            "get posts updates view - user id: {user_id}, updates since: {:?}",
+            updates_since
+        );
 
         if let Some(timeline_updates) = timeline_updates {
             let updated_post_refs = timeline_updates.posts;
@@ -273,7 +282,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
 trait UserTimelineUpdatesAgent {
     fn new() -> Self;
 

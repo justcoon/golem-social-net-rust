@@ -169,7 +169,7 @@ pub(crate) mod query {
 }
 
 pub(crate) mod snapshot {
-    use serde::{de, Serialize};
+    use serde::{Serialize, de};
 
     pub const SERIALIZATION_VERSION_V1: u8 = 1u8;
 

@@ -1,7 +1,7 @@
-use crate::common::{get_shard_number, query, UserConnectionType, ErrorResponse, SuccessResponse};
+use crate::common::{ErrorResponse, SuccessResponse, UserConnectionType, get_shard_number, query};
 use email_address::EmailAddress;
 use futures::future::join_all;
-use golem_rust::{agent_definition, agent_implementation, endpoint, Schema};
+use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -186,7 +186,6 @@ pub struct SetEmailRequest {
     pub email: Option<String>,
 }
 
-
 #[agent_definition(mount = "/v1/social-net/users/{id}")]
 trait UserAgent {
     fn new(id: String) -> Self;
@@ -253,7 +252,10 @@ impl UserAgent for UserAgentImpl {
 
     fn set_name(&mut self, request: SetNameRequest) -> Result<SuccessResponse, ErrorResponse> {
         self.with_state(|state| {
-            println!("set name: {}", request.name.clone().unwrap_or("N/A".to_string()));
+            println!(
+                "set name: {}",
+                request.name.clone().unwrap_or("N/A".to_string())
+            );
             state.set_name(request.name);
             Ok(SuccessResponse {
                 message: "name set".to_string(),
@@ -263,7 +265,10 @@ impl UserAgent for UserAgentImpl {
 
     fn set_email(&mut self, request: SetEmailRequest) -> Result<SuccessResponse, ErrorResponse> {
         self.with_state(|state| {
-            println!("set email: {}", request.email.clone().unwrap_or("N/A".to_string()));
+            println!(
+                "set email: {}",
+                request.email.clone().unwrap_or("N/A".to_string())
+            );
             match state.set_email(request.email) {
                 Ok(_) => Ok(SuccessResponse {
                     message: "email set".to_string(),
@@ -279,16 +284,20 @@ impl UserAgent for UserAgentImpl {
     ) -> Result<SuccessResponse, ErrorResponse> {
         let state = self.get_state();
         if state.connect_user(request.user_id.clone(), request.connection_type.clone()) {
-            println!("connect user - id: {}, type: {}", request.user_id, request.connection_type);
+            println!(
+                "connect user - id: {}, type: {}",
+                request.user_id, request.connection_type
+            );
 
             let opposite_connection_type = request.connection_type.get_opposite();
 
-            UserAgentClient::get(request.user_id.clone())
-                .trigger_connect_user(ConnectUserRequest {
+            UserAgentClient::get(request.user_id.clone()).trigger_connect_user(
+                ConnectUserRequest {
                     user_id: state.user_id.clone(),
                     connection_type: opposite_connection_type,
-                });
-            
+                },
+            );
+
             Ok(SuccessResponse {
                 message: "connected".to_string(),
             })
@@ -309,16 +318,20 @@ impl UserAgent for UserAgentImpl {
     ) -> Result<SuccessResponse, ErrorResponse> {
         let state = self.get_state();
         if state.disconnect_user(request.user_id.clone(), request.connection_type.clone()) {
-            println!("disconnect user - id: {}, type: {}", request.user_id, request.connection_type);
+            println!(
+                "disconnect user - id: {}, type: {}",
+                request.user_id, request.connection_type
+            );
 
             let opposite_connection_type = request.connection_type.get_opposite();
 
-            UserAgentClient::get(request.user_id.clone())
-                .trigger_disconnect_user(DisconnectUserRequest {
+            UserAgentClient::get(request.user_id.clone()).trigger_disconnect_user(
+                DisconnectUserRequest {
                     user_id: state.user_id.clone(),
                     connection_type: opposite_connection_type,
-                });
-            
+                },
+            );
+
             Ok(SuccessResponse {
                 message: "disconnected".to_string(),
             })
@@ -709,21 +722,24 @@ mod tests {
         assert!(result3);
         assert_eq!(user.connected_users.len(), 3);
 
-        assert!(user
-            .connected_users
-            .get("user2")
-            .unwrap()
-            .has_connection_type(&UserConnectionType::Friend));
-        assert!(user
-            .connected_users
-            .get("user3")
-            .unwrap()
-            .has_connection_type(&UserConnectionType::Follower));
-        assert!(user
-            .connected_users
-            .get("user4")
-            .unwrap()
-            .has_connection_type(&UserConnectionType::Friend));
+        assert!(
+            user.connected_users
+                .get("user2")
+                .unwrap()
+                .has_connection_type(&UserConnectionType::Friend)
+        );
+        assert!(
+            user.connected_users
+                .get("user3")
+                .unwrap()
+                .has_connection_type(&UserConnectionType::Follower)
+        );
+        assert!(
+            user.connected_users
+                .get("user4")
+                .unwrap()
+                .has_connection_type(&UserConnectionType::Friend)
+        );
     }
 
     #[test]
@@ -931,16 +947,18 @@ mod tests {
         }
 
         assert_eq!(user.connected_users.len(), 2);
-        assert!(user
-            .connected_users
-            .get("user2")
-            .unwrap()
-            .has_connection_type(&UserConnectionType::Friend));
-        assert!(user
-            .connected_users
-            .get("user3")
-            .unwrap()
-            .has_connection_type(&UserConnectionType::Follower));
+        assert!(
+            user.connected_users
+                .get("user2")
+                .unwrap()
+                .has_connection_type(&UserConnectionType::Friend)
+        );
+        assert!(
+            user.connected_users
+                .get("user3")
+                .unwrap()
+                .has_connection_type(&UserConnectionType::Follower)
+        );
     }
 
     #[test]
