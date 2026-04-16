@@ -334,10 +334,11 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
 trait UserChatsUpdatesAgent {
     fn new() -> Self;
 
+    #[endpoint(get = "/{user_id}/chats/updates?since={since}")]
     async fn get_chats_updates(
         &mut self,
         user_id: String,

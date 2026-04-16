@@ -286,6 +286,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
 trait UserTimelineUpdatesAgent {
     fn new() -> Self;
 
+    #[endpoint(get = "/{user_id}/timeline/posts/updates?since={since}")]
     async fn get_posts_updates(
         &mut self,
         user_id: String,
