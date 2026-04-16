@@ -150,7 +150,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
                 })
             } else {
                 let chat_id = uuid::Uuid::new_v4().to_string();
-                println!("create chat - id: {chat_id}");
+                log::info!("create chat - id: {chat_id}");
 
                 let chat_ref = ChatRef::new(chat_id.clone(), u_id);
                 let created_at = chat_ref.created_at;
@@ -181,7 +181,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
                 Err("Chat created by current user".to_string())
             } else {
                 if !state.chats.iter().any(|c| c.chat_id == chat_id) {
-                    println!("add chat - id: {chat_id}");
+                    log::info!("add chat - id: {chat_id}");
 
                     state.chats.push(ChatRef {
                         chat_id,
@@ -206,7 +206,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.with_state(
             |state| match state.chats.iter_mut().find(|m| m.chat_id == chat_id) {
                 Some(chat) => {
-                    println!("chat updated - id: {chat_id}");
+                    log::info!("chat updated - id: {chat_id}");
                     chat.updated_at = updated_at;
                     if state.updated_at < updated_at {
                         state.updated_at = updated_at;
@@ -223,7 +223,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
         updates_since: chrono::DateTime<chrono::Utc>,
     ) -> Option<UserChatsUpdates> {
         if let Some(state) = &self.state {
-            println!("get updates - updates since: {updates_since}");
+            log::info!("get updates - updates since: {updates_since}");
 
             let updates = state
                 .chats
@@ -256,7 +256,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
 trait UserChatsViewAgent {
     fn new() -> Self;
 
-    #[endpoint(get = "/{user_id}/chats/search")]
+    #[endpoint(get = "/{user_id}/chats/search?query={query}")]
     async fn get_chats_view(&mut self, user_id: String, query: String) -> Option<Vec<Chat>>;
 
     async fn get_chats_updates_view(
@@ -277,12 +277,12 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
     async fn get_chats_view(&mut self, user_id: String, query: String) -> Option<Vec<Chat>> {
         let user_chats = UserChatsAgentClient::get(user_id.clone()).get_chats().await;
 
-        println!("get chats view - user id: {user_id}, query: {query}");
+        log::info!("get chats view - user id: {user_id}, query: {query}");
 
         if let Some(user_chats) = user_chats {
             let query = query::Query::new(&query);
 
-            println!("get chats view - user id: {user_id}, query matcher: {query}");
+            log::info!("get chats view - user id: {user_id}, query matcher: {query}");
 
             let chat_ids = user_chats
                 .chats
@@ -312,7 +312,7 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
             .get_updates(updates_since)
             .await;
 
-        println!("get chats updates view - user id: {user_id}, updates since: {updates_since}");
+        log::info!("get chats updates view - user id: {user_id}, updates since: {updates_since}");
 
         if let Some(user_chats_updates) = user_chats_updates {
             let updated_chat_refs = user_chats_updates.chats;

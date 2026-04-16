@@ -259,7 +259,7 @@ impl ChatAgent for ChatAgentImpl {
             Err("Chat must have at least 2 participants".to_string())
         } else {
             let state = self.get_state();
-            println!(
+            log::info!(
                 "init chat - created by: {created_by}, participants: {}",
                 participants_ids.len()
             );
@@ -300,7 +300,7 @@ impl ChatAgent for ChatAgentImpl {
                         message: "No new participants".to_string(),
                     })
                 } else {
-                    println!(
+                    log::info!(
                         "add participants - new participants: {}",
                         new_participants_ids.len()
                     );
@@ -340,9 +340,10 @@ impl ChatAgent for ChatAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "add message - user id: {}, content: {}",
-                    request.user_id, request.content
+                    request.user_id,
+                    request.content
                 );
                 if state.messages.len() >= MAX_CHAT_LENGTH {
                     Err(ErrorResponse {
@@ -368,7 +369,7 @@ impl ChatAgent for ChatAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!("remove message - message id: {}", message_id);
+                log::info!("remove message - message id: {}", message_id);
                 if state.remove_message(message_id) {
                     execute_chat_updates(
                         state.chat_id.clone(),
@@ -398,9 +399,11 @@ impl ChatAgent for ChatAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "set message like - message id: {}, user id: {}, like type: {}",
-                    message_id, request.user_id, request.like_type
+                    message_id,
+                    request.user_id,
+                    request.like_type
                 );
                 if state.set_message_like(
                     message_id.clone(),
@@ -435,9 +438,10 @@ impl ChatAgent for ChatAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "remove message like - chat id: {}, user id: {}",
-                    message_id, user_id
+                    message_id,
+                    user_id
                 );
                 if state.remove_message_like(message_id, user_id.clone()) {
                     execute_chat_updates(

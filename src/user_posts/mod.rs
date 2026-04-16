@@ -104,7 +104,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
         updates_since: chrono::DateTime<chrono::Utc>,
     ) -> Option<UserPostsUpdates> {
         if let Some(state) = &self.state {
-            println!("get updates - updates since: {updates_since}");
+            log::info!("get updates - updates since: {updates_since}");
 
             let updates = state
                 .posts
@@ -129,7 +129,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
         self.with_state(|state| {
             let post_id = uuid::Uuid::new_v4().to_string();
 
-            println!("create post - id: {post_id}");
+            log::info!("create post - id: {post_id}");
 
             let post_ref = PostRef::new(post_id.clone());
 
@@ -158,7 +158,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
 trait UserPostsViewAgent {
     fn new() -> Self;
 
-    #[endpoint(get = "/{user_id}/posts/search")]
+    #[endpoint(get = "/{user_id}/posts/search?query={query}")]
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
 
     async fn get_posts_updates_view(
@@ -179,12 +179,12 @@ impl UserPostsViewAgent for UserPostsViewAgentImpl {
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>> {
         let user_posts = UserPostsAgentClient::get(user_id.clone()).get_posts().await;
 
-        println!("get posts view - user id: {user_id}, query: {query}");
+        log::info!("get posts view - user id: {user_id}, query: {query}");
 
         if let Some(user_posts) = user_posts {
             let query = query::Query::new(&query);
 
-            println!("get posts view - user id: {user_id}, query matcher: {query}");
+            log::info!("get posts view - user id: {user_id}, query matcher: {query}");
 
             let user_posts = user_posts.posts;
 
@@ -210,7 +210,7 @@ impl UserPostsViewAgent for UserPostsViewAgentImpl {
             .get_updates(updates_since)
             .await;
 
-        println!("get posts updates view - user id: {user_id}, updates since: {updates_since}");
+        log::info!("get posts updates view - user id: {user_id}, updates since: {updates_since}");
 
         if let Some(user_posts_updates) = user_posts_updates {
             let updated_post_refs = user_posts_updates.posts;

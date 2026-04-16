@@ -152,7 +152,7 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         updates_since: chrono::DateTime<chrono::Utc>,
     ) -> Option<UserTimelineUpdates> {
         if let Some(state) = &self.state {
-            println!("get updates - updates since: {updates_since}");
+            log::info!("get updates - updates since: {updates_since}");
 
             let updates = state
                 .posts
@@ -172,7 +172,7 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
 
     fn posts_updated(&mut self, posts: Vec<PostRef>) -> Result<(), String> {
         self.with_state(|state| {
-            println!("posts updated - count: {}", posts.len());
+            log::info!("posts updated - count: {}", posts.len());
             state.add_or_update_posts(posts);
             Ok(())
         })
@@ -193,10 +193,10 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
 trait UserTimelineViewAgent {
     fn new() -> Self;
 
-    #[endpoint(get = "/{user_id}/timeline/posts")]
+    #[endpoint(get = "/{user_id}/timeline/posts?query={query}")]
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
 
-    #[endpoint(get = "/{user_id}/timeline/posts/updates")]
+    #[endpoint(get = "/{user_id}/timeline/posts/updates?since={since}")]
     async fn get_posts_updates_view(
         &mut self,
         user_id: String,
@@ -217,12 +217,12 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
             .get_timeline()
             .await;
 
-        println!("get posts view - user id: {user_id}, query: {query}");
+        log::info!("get posts view - user id: {user_id}, query: {query}");
 
         if let Some(timeline_posts) = timeline_posts {
             let query = Query::new(&query);
 
-            println!("get posts view - user id: {user_id}, query matcher: {query}");
+            log::info!("get posts view - user id: {user_id}, query matcher: {query}");
 
             let post_ids = timeline_posts
                 .posts
@@ -257,7 +257,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
             .get_updates(updates_since.unwrap_or_else(|| chrono::Utc::now()))
             .await;
 
-        println!(
+        log::info!(
             "get posts updates view - user id: {user_id}, updates since: {:?}",
             updates_since
         );

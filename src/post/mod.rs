@@ -293,7 +293,7 @@ impl PostAgent for PostAgentImpl {
             Err("Post already exists".to_string())
         } else {
             let state = self.get_state();
-            println!("init post - user id: {user_id}, content: {content}");
+            log::info!("init post - user id: {user_id}, content: {content}");
             let now = chrono::Utc::now();
             state.created_by = user_id.clone();
             state.content = content;
@@ -317,7 +317,7 @@ impl PostAgent for PostAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "add comment - user id: {}, content: {}, parent id: {}",
                     request.user_id,
                     request.content,
@@ -351,7 +351,7 @@ impl PostAgent for PostAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!("remove comment - comment id: {}", comment_id);
+                log::info!("remove comment - comment id: {}", comment_id);
                 match state.remove_comment(comment_id) {
                     Ok(_) => {
                         TimelinesUpdaterAgentClient::get(state.created_by.clone())
@@ -373,9 +373,10 @@ impl PostAgent for PostAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "set like - user id: {}, like type: {}",
-                    request.user_id, request.like_type
+                    request.user_id,
+                    request.like_type
                 );
                 state.set_like(request.user_id.clone(), request.like_type);
                 Ok(SuccessResponse {
@@ -392,7 +393,7 @@ impl PostAgent for PostAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!("remove like - user id: {}", user_id);
+                log::info!("remove like - user id: {}", user_id);
                 state.remove_like(user_id.clone());
                 Ok(SuccessResponse {
                     message: "removed".to_string(),
@@ -412,9 +413,11 @@ impl PostAgent for PostAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "set comment like - comment id: {}, user id: {}, like type: {}",
-                    comment_id, request.user_id, request.like_type
+                    comment_id,
+                    request.user_id,
+                    request.like_type
                 );
                 match state.set_comment_like(
                     comment_id.clone(),
@@ -441,9 +444,10 @@ impl PostAgent for PostAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                println!(
+                log::info!(
                     "remove comment like - comment id: {}, user id: {}",
-                    comment_id, user_id
+                    comment_id,
+                    user_id
                 );
                 match state.remove_comment_like(comment_id, user_id.clone()) {
                     Ok(_) => Ok(SuccessResponse {
@@ -546,7 +550,7 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
     }
 
     async fn post_updated(&mut self, update: PostUpdate, process_immediately: bool) {
-        println!(
+        log::info!(
             "post updates - user id: {}, post id: {}",
             self.state.user_id.clone(),
             update.post_id.clone()
@@ -554,7 +558,7 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         self.add_update(update);
 
         if process_immediately {
-            println!(
+            log::info!(
                 "post updates - user id: {}, updates: {} - processing ...",
                 self.state.user_id.clone(),
                 self.state.updates.len()
@@ -564,7 +568,7 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
     }
 
     async fn process_posts_updates(&mut self) {
-        println!(
+        log::info!(
             "posts updates - user id: {}, updates: {} - processing ...",
             self.state.user_id.clone(),
             self.state.updates.len()
@@ -603,7 +607,7 @@ async fn execute_posts_updates(user_id: String, updates: Vec<PostUpdate>) -> boo
             }
         }
 
-        println!(
+        log::info!(
             "posts updates - user id: {user_id} - updates: {}, notify users: {}",
             updates.len(),
             notify_user_ids.len()
@@ -612,7 +616,7 @@ async fn execute_posts_updates(user_id: String, updates: Vec<PostUpdate>) -> boo
 
         true
     } else {
-        println!("posts updates - user id: {user_id} - not found");
+        log::info!("posts updates - user id: {user_id} - not found");
         false
     }
 }
