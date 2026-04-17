@@ -47,6 +47,6 @@ httpApi:
         UserTimelineViewAgent: {}
         UserChatsUpdatesAgent: {}
         UserTimelineUpdatesAgent: {}
-        UserIndexAgent: {}
-        TimelinesUpdaterAgent: {}
-        UserTimelineAgent: {}
+#        UserIndexAgent: {}
+#        TimelinesUpdaterAgent: {}
+#        UserTimelineAgent: {}
