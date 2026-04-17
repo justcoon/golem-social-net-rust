@@ -144,6 +144,11 @@ jobs:
           echo "Testing basic deployment..."
           golem component list
           echo "Deployment test completed successfully"
+      - name: Verify OpenAPI spec
+        run: |
+          echo "Fetching OpenAPI specification..."
+          curl http://localhost:9006/openapi.yaml
+          echo "OpenAPI spec verification completed"
       - name: Save components
         uses: actions/upload-artifact@v4
         with:
