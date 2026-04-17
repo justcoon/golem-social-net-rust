@@ -45,11 +45,6 @@ pub struct UserPostsUpdates {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct CreatePostRequest {
-    pub content: String,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct CreatePostResponse {
     pub post_id: String,
 }
@@ -62,10 +57,7 @@ trait UserPostsAgent {
     fn get_posts(&self) -> Option<UserPosts>;
 
     #[endpoint(post = "/posts")]
-    fn create_post(
-        &mut self,
-        request: CreatePostRequest,
-    ) -> Result<CreatePostResponse, ErrorResponse>;
+    fn create_post(&mut self, content: String) -> Result<CreatePostResponse, ErrorResponse>;
 
     fn get_updates(&self, updates_since: chrono::DateTime<chrono::Utc>)
     -> Option<UserPostsUpdates>;
@@ -122,10 +114,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
         }
     }
 
-    fn create_post(
-        &mut self,
-        request: CreatePostRequest,
-    ) -> Result<CreatePostResponse, ErrorResponse> {
+    fn create_post(&mut self, content: String) -> Result<CreatePostResponse, ErrorResponse> {
         self.with_state(|state| {
             let post_id = uuid::Uuid::new_v4().to_string();
 
@@ -133,8 +122,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
 
             let post_ref = PostRef::new(post_id.clone());
 
-            PostAgentClient::get(post_id.clone())
-                .trigger_init_post(state.user_id.clone(), request.content);
+            PostAgentClient::get(post_id.clone()).trigger_init_post(state.user_id.clone(), content);
 
             state.updated_at = post_ref.created_at;
             state.posts.push(post_ref);

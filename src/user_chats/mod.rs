@@ -66,11 +66,6 @@ pub struct UserChatsUpdates {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct CreateChatRequest {
-    pub participants: HashSet<String>,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct CreateChatResponse {
     pub chat_id: String,
 }
@@ -85,7 +80,7 @@ trait UserChatsAgent {
     #[endpoint(post = "/chats")]
     fn create_chat(
         &mut self,
-        request: CreateChatRequest,
+        participants: HashSet<String>,
     ) -> Result<CreateChatResponse, ErrorResponse>;
 
     fn add_chat(
@@ -135,12 +130,11 @@ impl UserChatsAgent for UserChatsAgentImpl {
 
     fn create_chat(
         &mut self,
-        request: CreateChatRequest,
+        participants: HashSet<String>,
     ) -> Result<CreateChatResponse, ErrorResponse> {
         self.with_state(|state| {
             let u_id = state.user_id.clone();
-            let participants_ids: HashSet<String> = request
-                .participants
+            let participants_ids: HashSet<String> = participants
                 .into_iter()
                 .filter(|id| id.clone() != u_id)
                 .collect::<HashSet<_>>();

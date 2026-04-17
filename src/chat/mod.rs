@@ -145,25 +145,8 @@ impl Chat {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct AddMessageRequest {
-    pub content: String,
-    pub user_id: String,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct AddMessageResponse {
     pub message_id: String,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct AddParticipantsRequest {
-    pub participants: HashSet<String>,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct SetMessageLikeRequest {
-    pub user_id: String,
-    pub like_type: LikeType,
 }
 
 #[agent_definition(mount = "/v1/social-net/chats/{id}")]
@@ -176,13 +159,14 @@ trait ChatAgent {
     #[endpoint(post = "/messages")]
     fn add_message(
         &mut self,
-        request: AddMessageRequest,
+        content: String,
+        user_id: String,
     ) -> Result<AddMessageResponse, ErrorResponse>;
 
     #[endpoint(put = "/participants")]
     fn add_participants(
         &mut self,
-        request: AddParticipantsRequest,
+        participants: HashSet<String>,
     ) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}")]
@@ -192,7 +176,8 @@ trait ChatAgent {
     fn set_message_like(
         &mut self,
         message_id: String,
-        request: SetMessageLikeRequest,
+        user_id: String,
+        like_type: LikeType,
     ) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}/likes/{user_id}")]
@@ -281,7 +266,7 @@ impl ChatAgent for ChatAgentImpl {
 
     fn add_participants(
         &mut self,
-        request: AddParticipantsRequest,
+        participants: HashSet<String>,
     ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
@@ -289,8 +274,7 @@ impl ChatAgent for ChatAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                let new_participants_ids: HashSet<String> = request
-                    .participants
+                let new_participants_ids: HashSet<String> = participants
                     .into_iter()
                     .filter(|id| !state.participants.contains(id))
                     .collect();
@@ -332,7 +316,8 @@ impl ChatAgent for ChatAgentImpl {
 
     fn add_message(
         &mut self,
-        request: AddMessageRequest,
+        content: String,
+        user_id: String,
     ) -> Result<AddMessageResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
@@ -340,17 +325,13 @@ impl ChatAgent for ChatAgentImpl {
             })
         } else {
             self.with_state(|state| {
-                log::info!(
-                    "add message - user id: {}, content: {}",
-                    request.user_id,
-                    request.content
-                );
+                log::info!("add message - user id: {}, content: {}", user_id, content);
                 if state.messages.len() >= MAX_CHAT_LENGTH {
                     Err(ErrorResponse {
                         message: "Max chat length".to_string(),
                     })
                 } else {
-                    let id = state.add_message(request.user_id.clone(), request.content.clone());
+                    let id = state.add_message(user_id.clone(), content.clone());
                     execute_chat_updates(
                         state.chat_id.clone(),
                         state.participants.clone(),
@@ -391,7 +372,8 @@ impl ChatAgent for ChatAgentImpl {
     fn set_message_like(
         &mut self,
         message_id: String,
-        request: SetMessageLikeRequest,
+        user_id: String,
+        like_type: LikeType,
     ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
@@ -402,14 +384,10 @@ impl ChatAgent for ChatAgentImpl {
                 log::info!(
                     "set message like - message id: {}, user id: {}, like type: {}",
                     message_id,
-                    request.user_id,
-                    request.like_type
+                    user_id,
+                    like_type
                 );
-                if state.set_message_like(
-                    message_id.clone(),
-                    request.user_id.clone(),
-                    request.like_type,
-                ) {
+                if state.set_message_like(message_id.clone(), user_id.clone(), like_type) {
                     execute_chat_updates(
                         state.chat_id.clone(),
                         state.participants.clone(),

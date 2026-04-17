@@ -192,25 +192,6 @@ impl Post {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct SetLikeRequest {
-    pub user_id: String,
-    pub like_type: LikeType,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct AddCommentRequest {
-    pub content: String,
-    pub user_id: String,
-    pub parent_comment_id: Option<String>,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct SetCommentLikeRequest {
-    pub user_id: String,
-    pub like_type: LikeType,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct AddCommentResponse {
     pub comment_id: String,
 }
@@ -223,7 +204,11 @@ trait PostAgent {
     fn get_post(&self) -> Option<Post>;
 
     #[endpoint(put = "/likes")]
-    fn set_like(&mut self, request: SetLikeRequest) -> Result<SuccessResponse, ErrorResponse>;
+    fn set_like(
+        &mut self,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(delete = "/likes/{user_id}")]
     fn remove_like(&mut self, user_id: String) -> Result<SuccessResponse, ErrorResponse>;
@@ -231,7 +216,9 @@ trait PostAgent {
     #[endpoint(post = "/comments")]
     fn add_comment(
         &mut self,
-        request: AddCommentRequest,
+        content: String,
+        user_id: String,
+        parent_comment_id: Option<String>,
     ) -> Result<AddCommentResponse, ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}")]
@@ -241,7 +228,8 @@ trait PostAgent {
     fn set_comment_like(
         &mut self,
         comment_id: String,
-        request: SetCommentLikeRequest,
+        user_id: String,
+        like_type: LikeType,
     ) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}/likes/{user_id}")]
@@ -309,7 +297,9 @@ impl PostAgent for PostAgentImpl {
 
     fn add_comment(
         &mut self,
-        request: AddCommentRequest,
+        content: String,
+        user_id: String,
+        parent_comment_id: Option<String>,
     ) -> Result<AddCommentResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
@@ -319,12 +309,9 @@ impl PostAgent for PostAgentImpl {
             self.with_state(|state| {
                 log::info!(
                     "add comment - user id: {}, content: {}, parent id: {}",
-                    request.user_id,
-                    request.content,
-                    request
-                        .parent_comment_id
-                        .clone()
-                        .unwrap_or("N/A".to_string())
+                    user_id,
+                    content,
+                    parent_comment_id.clone().unwrap_or("N/A".to_string())
                 );
                 if state.comments.len() >= COMMENTS_MAX_COUNT {
                     Err(ErrorResponse {
@@ -332,11 +319,11 @@ impl PostAgent for PostAgentImpl {
                     })
                 } else {
                     let comment_id = state.add_comment(
-                        request.user_id.clone(),
-                        request.content.clone(),
-                        request.parent_comment_id.clone(),
+                        user_id.clone(),
+                        content.clone(),
+                        parent_comment_id.clone(),
                     )?;
-                    TimelinesUpdaterAgentClient::get(request.user_id.clone())
+                    TimelinesUpdaterAgentClient::get(user_id.clone())
                         .trigger_post_updated(PostUpdate::from(state), false);
                     Ok(AddCommentResponse { comment_id })
                 }
@@ -366,19 +353,19 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    fn set_like(&mut self, request: SetLikeRequest) -> Result<SuccessResponse, ErrorResponse> {
+    fn set_like(
+        &mut self,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
             })
         } else {
             self.with_state(|state| {
-                log::info!(
-                    "set like - user id: {}, like type: {}",
-                    request.user_id,
-                    request.like_type
-                );
-                state.set_like(request.user_id.clone(), request.like_type);
+                log::info!("set like - user id: {}, like type: {}", user_id, like_type);
+                state.set_like(user_id.clone(), like_type);
                 Ok(SuccessResponse {
                     message: "set".to_string(),
                 })
@@ -405,7 +392,8 @@ impl PostAgent for PostAgentImpl {
     fn set_comment_like(
         &mut self,
         comment_id: String,
-        request: SetCommentLikeRequest,
+        user_id: String,
+        like_type: LikeType,
     ) -> Result<SuccessResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
@@ -416,14 +404,10 @@ impl PostAgent for PostAgentImpl {
                 log::info!(
                     "set comment like - comment id: {}, user id: {}, like type: {}",
                     comment_id,
-                    request.user_id,
-                    request.like_type
+                    user_id,
+                    like_type
                 );
-                match state.set_comment_like(
-                    comment_id.clone(),
-                    request.user_id.clone(),
-                    request.like_type,
-                ) {
+                match state.set_comment_like(comment_id.clone(), user_id.clone(), like_type) {
                     Ok(_) => Ok(SuccessResponse {
                         message: "set".to_string(),
                     }),

@@ -164,28 +164,6 @@ impl User {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct ConnectUserRequest {
-    pub user_id: String,
-    pub connection_type: UserConnectionType,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct DisconnectUserRequest {
-    pub user_id: String,
-    pub connection_type: UserConnectionType,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct SetNameRequest {
-    pub name: Option<String>,
-}
-
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct SetEmailRequest {
-    pub email: Option<String>,
-}
-
 #[agent_definition(mount = "/v1/social-net/users/{id}")]
 trait UserAgent {
     fn new(id: String) -> Self;
@@ -194,21 +172,23 @@ trait UserAgent {
     fn get_user(&self) -> Option<User>;
 
     #[endpoint(put = "/name")]
-    fn set_name(&mut self, request: SetNameRequest) -> Result<SuccessResponse, ErrorResponse>;
+    fn set_name(&mut self, name: Option<String>) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(put = "/email")]
-    fn set_email(&mut self, request: SetEmailRequest) -> Result<SuccessResponse, ErrorResponse>;
+    fn set_email(&mut self, email: Option<String>) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(put = "/connections")]
     fn connect_user(
         &mut self,
-        request: ConnectUserRequest,
+        user_id: String,
+        connection_type: UserConnectionType,
     ) -> Result<SuccessResponse, ErrorResponse>;
 
     #[endpoint(delete = "/connections")]
     fn disconnect_user(
         &mut self,
-        request: DisconnectUserRequest,
+        user_id: String,
+        connection_type: UserConnectionType,
     ) -> Result<SuccessResponse, ErrorResponse>;
 
     fn get_user_if_match(&self, query: query::Query) -> Option<User>;
@@ -250,26 +230,20 @@ impl UserAgent for UserAgentImpl {
         self.state.clone()
     }
 
-    fn set_name(&mut self, request: SetNameRequest) -> Result<SuccessResponse, ErrorResponse> {
+    fn set_name(&mut self, name: Option<String>) -> Result<SuccessResponse, ErrorResponse> {
         self.with_state(|state| {
-            log::info!(
-                "set name: {}",
-                request.name.clone().unwrap_or("N/A".to_string())
-            );
-            state.set_name(request.name);
+            log::info!("set name: {}", name.clone().unwrap_or("N/A".to_string()));
+            state.set_name(name);
             Ok(SuccessResponse {
                 message: "name set".to_string(),
             })
         })
     }
 
-    fn set_email(&mut self, request: SetEmailRequest) -> Result<SuccessResponse, ErrorResponse> {
+    fn set_email(&mut self, email: Option<String>) -> Result<SuccessResponse, ErrorResponse> {
         self.with_state(|state| {
-            log::info!(
-                "set email: {}",
-                request.email.clone().unwrap_or("N/A".to_string())
-            );
-            match state.set_email(request.email) {
+            log::info!("set email: {}", email.clone().unwrap_or("N/A".to_string()));
+            match state.set_email(email) {
                 Ok(_) => Ok(SuccessResponse {
                     message: "email set".to_string(),
                 }),
@@ -280,24 +254,17 @@ impl UserAgent for UserAgentImpl {
 
     fn connect_user(
         &mut self,
-        request: ConnectUserRequest,
+        user_id: String,
+        connection_type: UserConnectionType,
     ) -> Result<SuccessResponse, ErrorResponse> {
         let state = self.get_state();
-        if state.connect_user(request.user_id.clone(), request.connection_type.clone()) {
-            log::info!(
-                "connect user - id: {}, type: {}",
-                request.user_id,
-                request.connection_type
-            );
+        if state.connect_user(user_id.clone(), connection_type.clone()) {
+            log::info!("connect user - id: {}, type: {}", user_id, connection_type);
 
-            let opposite_connection_type = request.connection_type.get_opposite();
+            let opposite_connection_type = connection_type.get_opposite();
 
-            UserAgentClient::get(request.user_id.clone()).trigger_connect_user(
-                ConnectUserRequest {
-                    user_id: state.user_id.clone(),
-                    connection_type: opposite_connection_type,
-                },
-            );
+            UserAgentClient::get(user_id.clone())
+                .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
 
             Ok(SuccessResponse {
                 message: "connected".to_string(),
@@ -305,8 +272,8 @@ impl UserAgent for UserAgentImpl {
         } else {
             log::info!(
                 "connect user - id: {}, type: {} - connection already exists or invalid",
-                request.user_id,
-                request.connection_type
+                user_id,
+                connection_type
             );
             Err(ErrorResponse {
                 message: "connection already exists or invalid".to_string(),
@@ -316,24 +283,21 @@ impl UserAgent for UserAgentImpl {
 
     fn disconnect_user(
         &mut self,
-        request: DisconnectUserRequest,
+        user_id: String,
+        connection_type: UserConnectionType,
     ) -> Result<SuccessResponse, ErrorResponse> {
         let state = self.get_state();
-        if state.disconnect_user(request.user_id.clone(), request.connection_type.clone()) {
+        if state.disconnect_user(user_id.clone(), connection_type.clone()) {
             log::info!(
                 "disconnect user - id: {}, type: {}",
-                request.user_id,
-                request.connection_type
+                user_id,
+                connection_type
             );
 
-            let opposite_connection_type = request.connection_type.get_opposite();
+            let opposite_connection_type = connection_type.get_opposite();
 
-            UserAgentClient::get(request.user_id.clone()).trigger_disconnect_user(
-                DisconnectUserRequest {
-                    user_id: state.user_id.clone(),
-                    connection_type: opposite_connection_type,
-                },
-            );
+            UserAgentClient::get(user_id.clone())
+                .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
 
             Ok(SuccessResponse {
                 message: "disconnected".to_string(),
@@ -341,8 +305,8 @@ impl UserAgent for UserAgentImpl {
         } else {
             log::info!(
                 "disconnect user - id: {}, type: {} - connection not found or invalid",
-                request.user_id,
-                request.connection_type
+                user_id,
+                connection_type
             );
             Err(ErrorResponse {
                 message: "connection not found or invalid".to_string(),
