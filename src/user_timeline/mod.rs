@@ -196,7 +196,7 @@ trait UserTimelineViewAgent {
     #[endpoint(get = "/{user_id}/timeline/posts?query={query}")]
     async fn get_posts_view(&mut self, user_id: String, query: String) -> Option<Vec<Post>>;
 
-    #[endpoint(get = "/{user_id}/timeline/posts/updates?since={since}")]
+    // #[endpoint(get = "/{user_id}/timeline/posts/updates?since={since}")]
     async fn get_posts_updates_view(
         &mut self,
         user_id: String,
@@ -248,17 +248,20 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
         user_id: String,
         since: Option<String>,
     ) -> Option<Vec<Post>> {
-        let updates_since = since.map(|s| {
-            chrono::DateTime::parse_from_rfc3339(&s)
-                .unwrap_or_default()
-                .into()
-        });
+        let updates_since = since
+            .map(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .unwrap_or_default()
+                    .into()
+            })
+            .unwrap_or_else(|| chrono::Utc::now());
+
         let timeline_updates = UserTimelineAgentClient::get(user_id.clone())
-            .get_updates(updates_since.unwrap_or_else(|| chrono::Utc::now()))
+            .get_updates(updates_since)
             .await;
 
         log::info!(
-            "get posts updates view - user id: {user_id}, updates since: {:?}",
+            "get posts updates view - user id: {user_id}, updates since: {}",
             updates_since
         );
 
@@ -290,9 +293,9 @@ trait UserTimelineUpdatesAgent {
     async fn get_posts_updates(
         &mut self,
         user_id: String,
-        updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        iter_wait_time: Option<u32>,
-        max_wait_time: Option<u32>,
+        since: Option<String>,
+        // iter_wait_time: Option<u32>,
+        // max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>>;
 }
 
@@ -307,10 +310,17 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
     async fn get_posts_updates(
         &mut self,
         user_id: String,
-        updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        iter_wait_time: Option<u32>,
-        max_wait_time: Option<u32>,
+        since: Option<String>,
+        // iter_wait_time: Option<u32>,
+        // max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>> {
+        let iter_wait_time: Option<u32> = None;
+        let max_wait_time: Option<u32> = None;
+        let updates_since = since.map(|s| {
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .unwrap_or_default()
+                .into()
+        });
         poll_for_updates(
             user_id,
             updates_since,

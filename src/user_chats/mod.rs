@@ -262,7 +262,7 @@ trait UserChatsViewAgent {
     async fn get_chats_updates_view(
         &mut self,
         user_id: String,
-        updates_since: chrono::DateTime<chrono::Utc>,
+        since: Option<String>,
     ) -> Option<Vec<Chat>>;
 }
 
@@ -306,8 +306,16 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
     async fn get_chats_updates_view(
         &mut self,
         user_id: String,
-        updates_since: chrono::DateTime<chrono::Utc>,
+        since: Option<String>,
     ) -> Option<Vec<Chat>> {
+        let updates_since = since
+            .map(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .unwrap_or_default()
+                    .into()
+            })
+            .unwrap_or_else(|| chrono::Utc::now());
+
         let user_chats_updates = UserChatsAgentClient::get(user_id.clone())
             .get_updates(updates_since)
             .await;
@@ -342,9 +350,9 @@ trait UserChatsUpdatesAgent {
     async fn get_chats_updates(
         &mut self,
         user_id: String,
-        updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        iter_wait_time: Option<u32>,
-        max_wait_time: Option<u32>,
+        since: Option<String>,
+        // iter_wait_time: Option<u32>,
+        // max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>>;
 }
 
@@ -359,10 +367,17 @@ impl UserChatsUpdatesAgent for UserChatsUpdatesAgentImpl {
     async fn get_chats_updates(
         &mut self,
         user_id: String,
-        updates_since: Option<chrono::DateTime<chrono::Utc>>,
-        iter_wait_time: Option<u32>,
-        max_wait_time: Option<u32>,
+        since: Option<String>,
+        // iter_wait_time: Option<u32>,
+        // max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>> {
+        let iter_wait_time: Option<u32> = None;
+        let max_wait_time: Option<u32> = None;
+        let updates_since = since.map(|s| {
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .unwrap_or_default()
+                .into()
+        });
         poll_for_updates(
             user_id,
             updates_since,
