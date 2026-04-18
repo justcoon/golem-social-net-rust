@@ -65,11 +65,6 @@ pub struct UserChatsUpdates {
     pub chats: Vec<ChatRef>,
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct CreateChatResponse {
-    pub chat_id: String,
-}
-
 #[agent_definition(mount = "/v1/social-net/users/{id}")]
 trait UserChatsAgent {
     fn new(id: String) -> Self;
@@ -78,10 +73,7 @@ trait UserChatsAgent {
     fn get_chats(&self) -> Option<UserChats>;
 
     #[endpoint(post = "/chats")]
-    fn create_chat(
-        &mut self,
-        participants: HashSet<String>,
-    ) -> Result<CreateChatResponse, ErrorResponse>;
+    fn create_chat(&mut self, participants: HashSet<String>) -> Result<ChatRef, ErrorResponse>;
 
     fn add_chat(
         &mut self,
@@ -128,10 +120,7 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.state.clone()
     }
 
-    fn create_chat(
-        &mut self,
-        participants: HashSet<String>,
-    ) -> Result<CreateChatResponse, ErrorResponse> {
+    fn create_chat(&mut self, participants: HashSet<String>) -> Result<ChatRef, ErrorResponse> {
         self.with_state(|state| {
             let u_id = state.user_id.clone();
             let participants_ids: HashSet<String> = participants
@@ -155,10 +144,10 @@ impl UserChatsAgent for UserChatsAgentImpl {
                     created_at,
                 );
 
-                state.chats.push(chat_ref);
+                state.chats.push(chat_ref.clone());
                 state.updated_at = created_at;
 
-                Ok(CreateChatResponse { chat_id })
+                Ok(chat_ref)
             }
         })
     }
