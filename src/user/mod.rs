@@ -1,4 +1,4 @@
-use crate::common::{ErrorResponse, SuccessResponse, UserConnectionType, get_shard_number, query};
+use crate::common::{ErrorResponse, UserConnectionType, get_shard_number, query};
 use email_address::EmailAddress;
 use futures::future::join_all;
 use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
@@ -172,24 +172,24 @@ trait UserAgent {
     fn get_user(&self) -> Option<User>;
 
     #[endpoint(put = "/name")]
-    fn set_name(&mut self, name: Option<String>) -> Result<SuccessResponse, ErrorResponse>;
+    fn set_name(&mut self, name: Option<String>) -> Result<(), ErrorResponse>;
 
     #[endpoint(put = "/email")]
-    fn set_email(&mut self, email: Option<String>) -> Result<SuccessResponse, ErrorResponse>;
+    fn set_email(&mut self, email: Option<String>) -> Result<(), ErrorResponse>;
 
     #[endpoint(put = "/connections")]
     fn connect_user(
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    ) -> Result<(), ErrorResponse>;
 
     #[endpoint(delete = "/connections")]
     fn disconnect_user(
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    ) -> Result<(), ErrorResponse>;
 
     fn get_user_if_match(&self, query: query::Query) -> Option<User>;
 }
@@ -230,23 +230,19 @@ impl UserAgent for UserAgentImpl {
         self.state.clone()
     }
 
-    fn set_name(&mut self, name: Option<String>) -> Result<SuccessResponse, ErrorResponse> {
+    fn set_name(&mut self, name: Option<String>) -> Result<(), ErrorResponse> {
         self.with_state(|state| {
             log::info!("set name: {}", name.clone().unwrap_or("N/A".to_string()));
             state.set_name(name);
-            Ok(SuccessResponse {
-                message: "name set".to_string(),
-            })
+            Ok(())
         })
     }
 
-    fn set_email(&mut self, email: Option<String>) -> Result<SuccessResponse, ErrorResponse> {
+    fn set_email(&mut self, email: Option<String>) -> Result<(), ErrorResponse> {
         self.with_state(|state| {
             log::info!("set email: {}", email.clone().unwrap_or("N/A".to_string()));
             match state.set_email(email) {
-                Ok(_) => Ok(SuccessResponse {
-                    message: "email set".to_string(),
-                }),
+                Ok(_) => Ok(()),
                 Err(e) => Err(ErrorResponse { message: e }),
             }
         })
@@ -256,7 +252,7 @@ impl UserAgent for UserAgentImpl {
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    ) -> Result<(), ErrorResponse> {
         let state = self.get_state();
         if state.connect_user(user_id.clone(), connection_type.clone()) {
             log::info!("connect user - id: {}, type: {}", user_id, connection_type);
@@ -266,9 +262,7 @@ impl UserAgent for UserAgentImpl {
             UserAgentClient::get(user_id.clone())
                 .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
 
-            Ok(SuccessResponse {
-                message: "connected".to_string(),
-            })
+            Ok(())
         } else {
             log::info!(
                 "connect user - id: {}, type: {} - connection already exists or invalid",
@@ -285,7 +279,7 @@ impl UserAgent for UserAgentImpl {
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    ) -> Result<(), ErrorResponse> {
         let state = self.get_state();
         if state.disconnect_user(user_id.clone(), connection_type.clone()) {
             log::info!(
@@ -299,9 +293,7 @@ impl UserAgent for UserAgentImpl {
             UserAgentClient::get(user_id.clone())
                 .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
 
-            Ok(SuccessResponse {
-                message: "disconnected".to_string(),
-            })
+            Ok(())
         } else {
             log::info!(
                 "disconnect user - id: {}, type: {} - connection not found or invalid",

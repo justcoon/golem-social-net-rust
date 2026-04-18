@@ -1,4 +1,4 @@
-use crate::common::{ErrorResponse, LikeType, SuccessResponse, query};
+use crate::common::{ErrorResponse, LikeType, query};
 use crate::user_chats::UserChatsAgentClient;
 use futures::future::join_all;
 use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
@@ -164,13 +164,10 @@ trait ChatAgent {
     ) -> Result<AddMessageResponse, ErrorResponse>;
 
     #[endpoint(put = "/participants")]
-    fn add_participants(
-        &mut self,
-        participants: HashSet<String>,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    fn add_participants(&mut self, participants: HashSet<String>) -> Result<(), ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}")]
-    fn remove_message(&mut self, message_id: String) -> Result<SuccessResponse, ErrorResponse>;
+    fn remove_message(&mut self, message_id: String) -> Result<(), ErrorResponse>;
 
     #[endpoint(put = "/messages/{message_id}/likes")]
     fn set_message_like(
@@ -178,14 +175,14 @@ trait ChatAgent {
         message_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    ) -> Result<(), ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}/likes/{user_id}")]
     fn remove_message_like(
         &mut self,
         message_id: String,
         user_id: String,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    ) -> Result<(), ErrorResponse>;
 
     fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
 
@@ -264,10 +261,7 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn add_participants(
-        &mut self,
-        participants: HashSet<String>,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    fn add_participants(&mut self, participants: HashSet<String>) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),
@@ -306,9 +300,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.updated_at,
                     );
 
-                    Ok(SuccessResponse {
-                        message: "updated".to_string(),
-                    })
+                    Ok(())
                 }
             })
         }
@@ -343,7 +335,7 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn remove_message(&mut self, message_id: String) -> Result<SuccessResponse, ErrorResponse> {
+    fn remove_message(&mut self, message_id: String) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),
@@ -357,9 +349,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(SuccessResponse {
-                        message: "removed".to_string(),
-                    })
+                    Ok(())
                 } else {
                     Err(ErrorResponse {
                         message: "Message not found".to_string(),
@@ -374,7 +364,7 @@ impl ChatAgent for ChatAgentImpl {
         message_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    ) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),
@@ -393,9 +383,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(SuccessResponse {
-                        message: "set".to_string(),
-                    })
+                    Ok(())
                 } else {
                     Err(ErrorResponse {
                         message: "Message not found".to_string(),
@@ -409,7 +397,7 @@ impl ChatAgent for ChatAgentImpl {
         &mut self,
         message_id: String,
         user_id: String,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    ) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Chat not exists".to_string(),
@@ -427,9 +415,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(SuccessResponse {
-                        message: "removed".to_string(),
-                    })
+                    Ok(())
                 } else {
                     Err(ErrorResponse {
                         message: "Message not found".to_string(),

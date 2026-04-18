@@ -47,11 +47,6 @@ pub struct ErrorResponse {
     pub message: String,
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct SuccessResponse {
-    pub message: String,
-}
-
 impl From<String> for ErrorResponse {
     fn from(message: String) -> Self {
         ErrorResponse { message }

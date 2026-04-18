@@ -1,4 +1,4 @@
-use crate::common::{ErrorResponse, LikeType, SuccessResponse, UserConnectionType, query};
+use crate::common::{ErrorResponse, LikeType, UserConnectionType, query};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
 use futures::future::join_all;
@@ -204,14 +204,10 @@ trait PostAgent {
     fn get_post(&self) -> Option<Post>;
 
     #[endpoint(put = "/likes")]
-    fn set_like(
-        &mut self,
-        user_id: String,
-        like_type: LikeType,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), ErrorResponse>;
 
     #[endpoint(delete = "/likes/{user_id}")]
-    fn remove_like(&mut self, user_id: String) -> Result<SuccessResponse, ErrorResponse>;
+    fn remove_like(&mut self, user_id: String) -> Result<(), ErrorResponse>;
 
     #[endpoint(post = "/comments")]
     fn add_comment(
@@ -222,7 +218,7 @@ trait PostAgent {
     ) -> Result<AddCommentResponse, ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}")]
-    fn remove_comment(&mut self, comment_id: String) -> Result<SuccessResponse, ErrorResponse>;
+    fn remove_comment(&mut self, comment_id: String) -> Result<(), ErrorResponse>;
 
     #[endpoint(put = "/comments/{comment_id}/likes")]
     fn set_comment_like(
@@ -230,14 +226,14 @@ trait PostAgent {
         comment_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    ) -> Result<(), ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}/likes/{user_id}")]
     fn remove_comment_like(
         &mut self,
         comment_id: String,
         user_id: String,
-    ) -> Result<SuccessResponse, ErrorResponse>;
+    ) -> Result<(), ErrorResponse>;
 
     fn get_post_if_match(&self, query: query::Query) -> Option<Post>;
 
@@ -331,7 +327,7 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    fn remove_comment(&mut self, comment_id: String) -> Result<SuccessResponse, ErrorResponse> {
+    fn remove_comment(&mut self, comment_id: String) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -343,9 +339,7 @@ impl PostAgent for PostAgentImpl {
                     Ok(_) => {
                         TimelinesUpdaterAgentClient::get(state.created_by.clone())
                             .trigger_post_updated(PostUpdate::from(state), false);
-                        Ok(SuccessResponse {
-                            message: "removed".to_string(),
-                        })
+                        Ok(())
                     }
                     Err(e) => Err(ErrorResponse { message: e }),
                 }
@@ -353,11 +347,7 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    fn set_like(
-        &mut self,
-        user_id: String,
-        like_type: LikeType,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -366,14 +356,12 @@ impl PostAgent for PostAgentImpl {
             self.with_state(|state| {
                 log::info!("set like - user id: {}, like type: {}", user_id, like_type);
                 state.set_like(user_id.clone(), like_type);
-                Ok(SuccessResponse {
-                    message: "set".to_string(),
-                })
+                Ok(())
             })
         }
     }
 
-    fn remove_like(&mut self, user_id: String) -> Result<SuccessResponse, ErrorResponse> {
+    fn remove_like(&mut self, user_id: String) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -382,9 +370,7 @@ impl PostAgent for PostAgentImpl {
             self.with_state(|state| {
                 log::info!("remove like - user id: {}", user_id);
                 state.remove_like(user_id.clone());
-                Ok(SuccessResponse {
-                    message: "removed".to_string(),
-                })
+                Ok(())
             })
         }
     }
@@ -394,7 +380,7 @@ impl PostAgent for PostAgentImpl {
         comment_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    ) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -408,9 +394,7 @@ impl PostAgent for PostAgentImpl {
                     like_type
                 );
                 match state.set_comment_like(comment_id.clone(), user_id.clone(), like_type) {
-                    Ok(_) => Ok(SuccessResponse {
-                        message: "set".to_string(),
-                    }),
+                    Ok(_) => Ok(()),
                     Err(e) => Err(ErrorResponse { message: e }),
                 }
             })
@@ -421,7 +405,7 @@ impl PostAgent for PostAgentImpl {
         &mut self,
         comment_id: String,
         user_id: String,
-    ) -> Result<SuccessResponse, ErrorResponse> {
+    ) -> Result<(), ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -434,9 +418,7 @@ impl PostAgent for PostAgentImpl {
                     user_id
                 );
                 match state.remove_comment_like(comment_id, user_id.clone()) {
-                    Ok(_) => Ok(SuccessResponse {
-                        message: "removed".to_string(),
-                    }),
+                    Ok(_) => Ok(()),
                     Err(e) => Err(ErrorResponse { message: e }),
                 }
             })
