@@ -192,7 +192,13 @@ impl Post {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct PostResponse {
+    pub post_id: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct AddCommentResponse {
+    pub post_id: String,
     pub comment_id: String,
 }
 
@@ -204,10 +210,14 @@ trait PostAgent {
     fn get_post(&self) -> Option<Post>;
 
     #[endpoint(put = "/likes")]
-    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), ErrorResponse>;
+    fn set_like(
+        &mut self,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<PostResponse, ErrorResponse>;
 
     #[endpoint(delete = "/likes/{user_id}")]
-    fn remove_like(&mut self, user_id: String) -> Result<(), ErrorResponse>;
+    fn remove_like(&mut self, user_id: String) -> Result<PostResponse, ErrorResponse>;
 
     #[endpoint(post = "/comments")]
     fn add_comment(
@@ -218,7 +228,7 @@ trait PostAgent {
     ) -> Result<AddCommentResponse, ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}")]
-    fn remove_comment(&mut self, comment_id: String) -> Result<(), ErrorResponse>;
+    fn remove_comment(&mut self, comment_id: String) -> Result<PostResponse, ErrorResponse>;
 
     #[endpoint(put = "/comments/{comment_id}/likes")]
     fn set_comment_like(
@@ -226,14 +236,14 @@ trait PostAgent {
         comment_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<(), ErrorResponse>;
+    ) -> Result<PostResponse, ErrorResponse>;
 
     #[endpoint(delete = "/comments/{comment_id}/likes/{user_id}")]
     fn remove_comment_like(
         &mut self,
         comment_id: String,
         user_id: String,
-    ) -> Result<(), ErrorResponse>;
+    ) -> Result<PostResponse, ErrorResponse>;
 
     fn get_post_if_match(&self, query: query::Query) -> Option<Post>;
 
@@ -321,13 +331,16 @@ impl PostAgent for PostAgentImpl {
                     )?;
                     TimelinesUpdaterAgentClient::get(user_id.clone())
                         .trigger_post_updated(PostUpdate::from(state), false);
-                    Ok(AddCommentResponse { comment_id })
+                    Ok(AddCommentResponse {
+                        post_id: state.post_id.clone(),
+                        comment_id,
+                    })
                 }
             })
         }
     }
 
-    fn remove_comment(&mut self, comment_id: String) -> Result<(), ErrorResponse> {
+    fn remove_comment(&mut self, comment_id: String) -> Result<PostResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -339,7 +352,9 @@ impl PostAgent for PostAgentImpl {
                     Ok(_) => {
                         TimelinesUpdaterAgentClient::get(state.created_by.clone())
                             .trigger_post_updated(PostUpdate::from(state), false);
-                        Ok(())
+                        Ok(PostResponse {
+                            post_id: state.post_id.clone(),
+                        })
                     }
                     Err(e) => Err(ErrorResponse { message: e }),
                 }
@@ -347,7 +362,11 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    fn set_like(&mut self, user_id: String, like_type: LikeType) -> Result<(), ErrorResponse> {
+    fn set_like(
+        &mut self,
+        user_id: String,
+        like_type: LikeType,
+    ) -> Result<PostResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -356,12 +375,14 @@ impl PostAgent for PostAgentImpl {
             self.with_state(|state| {
                 log::info!("set like - user id: {}, like type: {}", user_id, like_type);
                 state.set_like(user_id.clone(), like_type);
-                Ok(())
+                Ok(PostResponse {
+                    post_id: state.post_id.clone(),
+                })
             })
         }
     }
 
-    fn remove_like(&mut self, user_id: String) -> Result<(), ErrorResponse> {
+    fn remove_like(&mut self, user_id: String) -> Result<PostResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -370,7 +391,9 @@ impl PostAgent for PostAgentImpl {
             self.with_state(|state| {
                 log::info!("remove like - user id: {}", user_id);
                 state.remove_like(user_id.clone());
-                Ok(())
+                Ok(PostResponse {
+                    post_id: state.post_id.clone(),
+                })
             })
         }
     }
@@ -380,7 +403,7 @@ impl PostAgent for PostAgentImpl {
         comment_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<(), ErrorResponse> {
+    ) -> Result<PostResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -394,7 +417,9 @@ impl PostAgent for PostAgentImpl {
                     like_type
                 );
                 match state.set_comment_like(comment_id.clone(), user_id.clone(), like_type) {
-                    Ok(_) => Ok(()),
+                    Ok(_) => Ok(PostResponse {
+                        post_id: state.post_id.clone(),
+                    }),
                     Err(e) => Err(ErrorResponse { message: e }),
                 }
             })
@@ -405,7 +430,7 @@ impl PostAgent for PostAgentImpl {
         &mut self,
         comment_id: String,
         user_id: String,
-    ) -> Result<(), ErrorResponse> {
+    ) -> Result<PostResponse, ErrorResponse> {
         if self.state.is_none() {
             Err(ErrorResponse {
                 message: "Post not exists".to_string(),
@@ -418,7 +443,9 @@ impl PostAgent for PostAgentImpl {
                     user_id
                 );
                 match state.remove_comment_like(comment_id, user_id.clone()) {
-                    Ok(_) => Ok(()),
+                    Ok(_) => Ok(PostResponse {
+                        post_id: state.post_id.clone(),
+                    }),
                     Err(e) => Err(ErrorResponse { message: e }),
                 }
             })

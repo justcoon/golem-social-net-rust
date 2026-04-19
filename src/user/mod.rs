@@ -50,6 +50,11 @@ impl ConnectedUser {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct UserResponse {
+    pub user_id: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct User {
     pub user_id: String,
     pub name: Option<String>,
@@ -172,24 +177,24 @@ trait UserAgent {
     fn get_user(&self) -> Option<User>;
 
     #[endpoint(put = "/name")]
-    fn set_name(&mut self, name: Option<String>) -> Result<(), ErrorResponse>;
+    fn set_name(&mut self, name: Option<String>) -> Result<UserResponse, ErrorResponse>;
 
     #[endpoint(put = "/email")]
-    fn set_email(&mut self, email: Option<String>) -> Result<(), ErrorResponse>;
+    fn set_email(&mut self, email: Option<String>) -> Result<UserResponse, ErrorResponse>;
 
     #[endpoint(put = "/connections")]
     fn connect_user(
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<(), ErrorResponse>;
+    ) -> Result<UserResponse, ErrorResponse>;
 
     #[endpoint(delete = "/connections")]
     fn disconnect_user(
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<(), ErrorResponse>;
+    ) -> Result<UserResponse, ErrorResponse>;
 
     fn get_user_if_match(&self, query: query::Query) -> Option<User>;
 }
@@ -230,19 +235,23 @@ impl UserAgent for UserAgentImpl {
         self.state.clone()
     }
 
-    fn set_name(&mut self, name: Option<String>) -> Result<(), ErrorResponse> {
+    fn set_name(&mut self, name: Option<String>) -> Result<UserResponse, ErrorResponse> {
         self.with_state(|state| {
             log::info!("set name: {}", name.clone().unwrap_or("N/A".to_string()));
             state.set_name(name);
-            Ok(())
+            Ok(UserResponse {
+                user_id: state.user_id.clone(),
+            })
         })
     }
 
-    fn set_email(&mut self, email: Option<String>) -> Result<(), ErrorResponse> {
+    fn set_email(&mut self, email: Option<String>) -> Result<UserResponse, ErrorResponse> {
         self.with_state(|state| {
             log::info!("set email: {}", email.clone().unwrap_or("N/A".to_string()));
             match state.set_email(email) {
-                Ok(_) => Ok(()),
+                Ok(_) => Ok(UserResponse {
+                    user_id: state.user_id.clone(),
+                }),
                 Err(e) => Err(ErrorResponse { message: e }),
             }
         })
@@ -252,7 +261,7 @@ impl UserAgent for UserAgentImpl {
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<(), ErrorResponse> {
+    ) -> Result<UserResponse, ErrorResponse> {
         let state = self.get_state();
         if state.connect_user(user_id.clone(), connection_type.clone()) {
             log::info!("connect user - id: {}, type: {}", user_id, connection_type);
@@ -262,7 +271,9 @@ impl UserAgent for UserAgentImpl {
             UserAgentClient::get(user_id.clone())
                 .trigger_connect_user(state.user_id.clone(), opposite_connection_type);
 
-            Ok(())
+            Ok(UserResponse {
+                user_id: state.user_id.clone(),
+            })
         } else {
             log::info!(
                 "connect user - id: {}, type: {} - connection already exists or invalid",
@@ -279,7 +290,7 @@ impl UserAgent for UserAgentImpl {
         &mut self,
         user_id: String,
         connection_type: UserConnectionType,
-    ) -> Result<(), ErrorResponse> {
+    ) -> Result<UserResponse, ErrorResponse> {
         let state = self.get_state();
         if state.disconnect_user(user_id.clone(), connection_type.clone()) {
             log::info!(
@@ -293,7 +304,9 @@ impl UserAgent for UserAgentImpl {
             UserAgentClient::get(user_id.clone())
                 .trigger_disconnect_user(state.user_id.clone(), opposite_connection_type);
 
-            Ok(())
+            Ok(UserResponse {
+                user_id: state.user_id.clone(),
+            })
         } else {
             log::info!(
                 "disconnect user - id: {}, type: {} - connection not found or invalid",

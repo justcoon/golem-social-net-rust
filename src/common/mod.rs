@@ -53,6 +53,14 @@ impl From<String> for ErrorResponse {
     }
 }
 
+impl From<&str> for ErrorResponse {
+    fn from(message: &str) -> Self {
+        ErrorResponse {
+            message: message.to_string(),
+        }
+    }
+}
+
 impl LikeType {
     pub fn is_positive(&self) -> bool {
         !self.is_negative()

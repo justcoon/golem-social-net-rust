@@ -145,7 +145,13 @@ impl Chat {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
+pub struct ChatResponse {
+    pub chat_id: String,
+}
+
+#[derive(Schema, Clone, Serialize, Deserialize)]
 pub struct AddMessageResponse {
+    pub chat_id: String,
     pub message_id: String,
 }
 
@@ -164,10 +170,13 @@ trait ChatAgent {
     ) -> Result<AddMessageResponse, ErrorResponse>;
 
     #[endpoint(put = "/participants")]
-    fn add_participants(&mut self, participants: HashSet<String>) -> Result<(), ErrorResponse>;
+    fn add_participants(
+        &mut self,
+        participants: HashSet<String>,
+    ) -> Result<ChatResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}")]
-    fn remove_message(&mut self, message_id: String) -> Result<(), ErrorResponse>;
+    fn remove_message(&mut self, message_id: String) -> Result<ChatResponse, ErrorResponse>;
 
     #[endpoint(put = "/messages/{message_id}/likes")]
     fn set_message_like(
@@ -175,14 +184,14 @@ trait ChatAgent {
         message_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<(), ErrorResponse>;
+    ) -> Result<ChatResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}/likes/{user_id}")]
     fn remove_message_like(
         &mut self,
         message_id: String,
         user_id: String,
-    ) -> Result<(), ErrorResponse>;
+    ) -> Result<ChatResponse, ErrorResponse>;
 
     fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
 
@@ -261,11 +270,12 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn add_participants(&mut self, participants: HashSet<String>) -> Result<(), ErrorResponse> {
+    fn add_participants(
+        &mut self,
+        participants: HashSet<String>,
+    ) -> Result<ChatResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err(ErrorResponse {
-                message: "Chat not exists".to_string(),
-            })
+            Err("Chat not exists".into())
         } else {
             self.with_state(|state| {
                 let new_participants_ids: HashSet<String> = participants
@@ -274,9 +284,7 @@ impl ChatAgent for ChatAgentImpl {
                     .collect();
 
                 if new_participants_ids.is_empty() {
-                    Err(ErrorResponse {
-                        message: "No new participants".to_string(),
-                    })
+                    Err("No new participants".into())
                 } else {
                     log::info!(
                         "add participants - new participants: {}",
@@ -300,7 +308,9 @@ impl ChatAgent for ChatAgentImpl {
                         state.updated_at,
                     );
 
-                    Ok(())
+                    Ok(ChatResponse {
+                        chat_id: state.chat_id.clone(),
+                    })
                 }
             })
         }
@@ -312,16 +322,12 @@ impl ChatAgent for ChatAgentImpl {
         user_id: String,
     ) -> Result<AddMessageResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err(ErrorResponse {
-                message: "Chat not exists".to_string(),
-            })
+            Err("Chat not exists".into())
         } else {
             self.with_state(|state| {
                 log::info!("add message - user id: {}, content: {}", user_id, content);
                 if state.messages.len() >= MAX_CHAT_LENGTH {
-                    Err(ErrorResponse {
-                        message: "Max chat length".to_string(),
-                    })
+                    Err("Max chat length".into())
                 } else {
                     let id = state.add_message(user_id.clone(), content.clone());
                     execute_chat_updates(
@@ -329,17 +335,18 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(AddMessageResponse { message_id: id })
+                    Ok(AddMessageResponse {
+                        chat_id: state.chat_id.clone(),
+                        message_id: id,
+                    })
                 }
             })
         }
     }
 
-    fn remove_message(&mut self, message_id: String) -> Result<(), ErrorResponse> {
+    fn remove_message(&mut self, message_id: String) -> Result<ChatResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err(ErrorResponse {
-                message: "Chat not exists".to_string(),
-            })
+            Err("Chat not exists".into())
         } else {
             self.with_state(|state| {
                 log::info!("remove message - message id: {}", message_id);
@@ -349,11 +356,11 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(())
-                } else {
-                    Err(ErrorResponse {
-                        message: "Message not found".to_string(),
+                    Ok(ChatResponse {
+                        chat_id: state.chat_id.clone(),
                     })
+                } else {
+                    Err("Message not found".into())
                 }
             })
         }
@@ -364,11 +371,9 @@ impl ChatAgent for ChatAgentImpl {
         message_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<(), ErrorResponse> {
+    ) -> Result<ChatResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err(ErrorResponse {
-                message: "Chat not exists".to_string(),
-            })
+            Err("Chat not exists".into())
         } else {
             self.with_state(|state| {
                 log::info!(
@@ -383,11 +388,11 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(())
-                } else {
-                    Err(ErrorResponse {
-                        message: "Message not found".to_string(),
+                    Ok(ChatResponse {
+                        chat_id: state.chat_id.clone(),
                     })
+                } else {
+                    Err("Message not found".into())
                 }
             })
         }
@@ -397,11 +402,9 @@ impl ChatAgent for ChatAgentImpl {
         &mut self,
         message_id: String,
         user_id: String,
-    ) -> Result<(), ErrorResponse> {
+    ) -> Result<ChatResponse, ErrorResponse> {
         if self.state.is_none() {
-            Err(ErrorResponse {
-                message: "Chat not exists".to_string(),
-            })
+            Err("Chat not exists".into())
         } else {
             self.with_state(|state| {
                 log::info!(
@@ -415,11 +418,11 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(())
-                } else {
-                    Err(ErrorResponse {
-                        message: "Message not found".to_string(),
+                    Ok(ChatResponse {
+                        chat_id: state.chat_id.clone(),
                     })
+                } else {
+                    Err("Message not found".into())
                 }
             })
         }
