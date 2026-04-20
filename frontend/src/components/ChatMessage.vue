@@ -20,10 +20,10 @@ function handleDelete() {
   }
 }
 
-const isOwnMessage = computed(() => props.message['created-by'] === props.currentUserId);
+const isOwnMessage = computed(() => props.message.created_by === props.currentUserId);
 
 const formattedDate = computed(() => {
-  return new Date(props.message['created-at'].timestamp).toLocaleString(undefined, {
+  return new Date(props.message.created_at.timestamp).toLocaleString(undefined, {
     timeStyle: 'short',
   });
 });
@@ -36,7 +36,7 @@ const likesTuple = computed<UserLikeTuple[]>(() => {
 <template>
   <div class="flex flex-col mb-4" :class="isOwnMessage ? 'items-end' : 'items-start'">
     <div class="flex items-center space-x-2 mb-1">
-      <span class="text-xs font-bold text-gray-500">{{ message['created-by'] }}</span>
+      <span class="text-xs font-bold text-gray-500">{{ message.created_by }}</span>
       <span class="text-[10px] text-gray-600">{{ formattedDate }}</span>
     </div>
     

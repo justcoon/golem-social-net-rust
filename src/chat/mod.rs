@@ -145,7 +145,7 @@ impl Chat {
 }
 
 #[derive(Schema, Clone, Serialize, Deserialize)]
-pub struct ChatResponse {
+pub struct UpdateResponse {
     pub chat_id: String,
 }
 
@@ -173,10 +173,10 @@ trait ChatAgent {
     fn add_participants(
         &mut self,
         participants: HashSet<String>,
-    ) -> Result<ChatResponse, ErrorResponse>;
+    ) -> Result<UpdateResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}")]
-    fn remove_message(&mut self, message_id: String) -> Result<ChatResponse, ErrorResponse>;
+    fn remove_message(&mut self, message_id: String) -> Result<UpdateResponse, ErrorResponse>;
 
     #[endpoint(put = "/messages/{message_id}/likes")]
     fn set_message_like(
@@ -184,14 +184,14 @@ trait ChatAgent {
         message_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<ChatResponse, ErrorResponse>;
+    ) -> Result<UpdateResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}/likes/{user_id}")]
     fn remove_message_like(
         &mut self,
         message_id: String,
         user_id: String,
-    ) -> Result<ChatResponse, ErrorResponse>;
+    ) -> Result<UpdateResponse, ErrorResponse>;
 
     fn get_chat_if_match(&self, query: query::Query) -> Option<Chat>;
 
@@ -273,7 +273,7 @@ impl ChatAgent for ChatAgentImpl {
     fn add_participants(
         &mut self,
         participants: HashSet<String>,
-    ) -> Result<ChatResponse, ErrorResponse> {
+    ) -> Result<UpdateResponse, ErrorResponse> {
         if self.state.is_none() {
             Err("Chat not exists".into())
         } else {
@@ -308,7 +308,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.updated_at,
                     );
 
-                    Ok(ChatResponse {
+                    Ok(UpdateResponse {
                         chat_id: state.chat_id.clone(),
                     })
                 }
@@ -344,7 +344,7 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    fn remove_message(&mut self, message_id: String) -> Result<ChatResponse, ErrorResponse> {
+    fn remove_message(&mut self, message_id: String) -> Result<UpdateResponse, ErrorResponse> {
         if self.state.is_none() {
             Err("Chat not exists".into())
         } else {
@@ -356,7 +356,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(ChatResponse {
+                    Ok(UpdateResponse {
                         chat_id: state.chat_id.clone(),
                     })
                 } else {
@@ -371,7 +371,7 @@ impl ChatAgent for ChatAgentImpl {
         message_id: String,
         user_id: String,
         like_type: LikeType,
-    ) -> Result<ChatResponse, ErrorResponse> {
+    ) -> Result<UpdateResponse, ErrorResponse> {
         if self.state.is_none() {
             Err("Chat not exists".into())
         } else {
@@ -388,7 +388,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(ChatResponse {
+                    Ok(UpdateResponse {
                         chat_id: state.chat_id.clone(),
                     })
                 } else {
@@ -402,7 +402,7 @@ impl ChatAgent for ChatAgentImpl {
         &mut self,
         message_id: String,
         user_id: String,
-    ) -> Result<ChatResponse, ErrorResponse> {
+    ) -> Result<UpdateResponse, ErrorResponse> {
         if self.state.is_none() {
             Err("Chat not exists".into())
         } else {
@@ -418,7 +418,7 @@ impl ChatAgent for ChatAgentImpl {
                         state.participants.clone(),
                         state.updated_at,
                     );
-                    Ok(ChatResponse {
+                    Ok(UpdateResponse {
                         chat_id: state.chat_id.clone(),
                     })
                 } else {

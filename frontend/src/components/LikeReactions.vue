@@ -13,32 +13,31 @@ const emit = defineEmits<{
 }>();
 
 const reactionIcons: Record<LikeType, string> = {
-  like: '👍',
-  insightful: '💡',
-  love: '❤️',
-  dislike: '👎'
+  Like: '👍',
+  Insightful: '💡',
+  Love: '❤️',
+  Dislike: '👎'
 };
 
 const reactionLabels: Record<LikeType, string> = {
-  like: 'Like',
-  insightful: 'Insightful',
-  love: 'Love',
-  dislike: 'Dislike'
+  Like: 'Like',
+  Insightful: 'Insightful',
+  Love: 'Love',
+  Dislike: 'Dislike'
 };
 
 const aggregateLikes = computed(() => {
   const counts: Record<LikeType, number> = {
-    like: 0,
-    insightful: 0,
-    love: 0,
-    dislike: 0
+    Like: 0,
+    Insightful: 0,
+    Love: 0,
+    Dislike: 0
   };
   
   if (props.likes) {
     props.likes.forEach(([_, type]) => {
-      const lowerType = type.toLowerCase() as LikeType;
-      if (counts[lowerType] !== undefined) {
-        counts[lowerType]++;
+      if (counts[type] !== undefined) {
+        counts[type]++;
       }
     });
   }
@@ -53,7 +52,7 @@ const totalCount = computed(() => {
 const myReaction = computed(() => {
   if (!props.likes || !props.currentUserId) return null;
   const found = props.likes.find(([uid]) => uid === props.currentUserId);
-  return found ? (found[1].toLowerCase() as LikeType) : null;
+  return found ? found[1] : null;
 });
 
 function toggleReaction(type: LikeType) {
@@ -89,7 +88,7 @@ function toggleReaction(type: LikeType) {
           <button 
             class="px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center space-x-1"
             :class="myReaction ? 'bg-purple-900/30 text-purple-400 border border-purple-500/30' : 'text-gray-400 hover:bg-neutral-800'"
-            @click="toggleReaction(myReaction || 'like')"
+            @click="toggleReaction(myReaction || 'Like')"
           >
             <span v-if="myReaction">{{ reactionIcons[myReaction] }}</span>
             <span v-else>👍</span>

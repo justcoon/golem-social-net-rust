@@ -15,8 +15,8 @@ const createChatError = ref<string | null>(null);
 
 const sortedChats = computed(() => {
   return [...chats.value].sort((a, b) => {
-    const timeA = new Date(a['updated-at'].timestamp).getTime();
-    const timeB = new Date(b['updated-at'].timestamp).getTime();
+    const timeA = new Date(a.updated_at.timestamp).getTime();
+    const timeB = new Date(b.updated_at.timestamp).getTime();
     return timeB - timeA;
   });
 });
@@ -71,7 +71,7 @@ function getFormattedDate(dateStr: string) {
         <div class="flex flex-col space-y-3">
             <ConnectionSelect 
                 v-model="selectedParticipants"
-                :connections="user?.['connected-users'] || []"
+                :connections="user?.connected_users || []"
                 placeholder="Add participants..."
             />
             <div class="flex space-x-2">
@@ -105,10 +105,10 @@ function getFormattedDate(dateStr: string) {
       
       <div 
         v-for="chat in sortedChats" 
-        :key="chat['chat-id']"
-        @click="selectChat(chat['chat-id'])"
+        :key="chat.chat_id"
+        @click="selectChat(chat.chat_id)"
         class="p-4 border-b border-neutral-800/10 hover:bg-neutral-800 cursor-pointer transition flex justify-between items-start"
-        :class="{ 'bg-neutral-800 border-l-4 border-l-purple-600': activeChatId === chat['chat-id'] }"
+        :class="{ 'bg-neutral-800 border-l-4 border-l-purple-600': activeChatId === chat.chat_id }"
       >
         <div class="flex-1 min-w-0">
           <div class="text-sm font-semibold text-gray-200 truncate">
@@ -119,7 +119,7 @@ function getFormattedDate(dateStr: string) {
           </div>
         </div>
         <div class="text-[10px] text-gray-600 ml-2 whitespace-nowrap pt-1">
-          {{ getFormattedDate(chat['updated-at'].timestamp) }}
+          {{ getFormattedDate(chat.updated_at.timestamp) }}
         </div>
       </div>
     </div>

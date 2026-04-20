@@ -139,9 +139,8 @@ async fn create_post_comments_and_likes(user: &mut GooseUser) -> TransactionResu
         )
         .await?;
 
-    let post_created_res: domain::common::OkResult<domain::common::PostCreated> =
-        response.json().await?;
-    let post_id = post_created_res.ok.post_id;
+    let post_created_res: domain::common::PostCreated = response.json().await?;
+    let post_id = post_created_res.post_id;
 
     // 2. Like Post
     let set_post_like = domain::common::SetLike {
@@ -174,8 +173,8 @@ async fn create_post_comments_and_likes(user: &mut GooseUser) -> TransactionResu
             )
             .await?;
 
-        let comment_id_res: domain::common::OkResult<String> = response.json().await?;
-        let comment_id = comment_id_res.ok;
+        let comment_id_res: domain::common::AddCommentResponse = response.json().await?;
+        let comment_id = comment_id_res.comment_id;
         last_comment_id = Some(comment_id.clone());
 
         // Like Comment
@@ -226,9 +225,8 @@ async fn create_chat_messages_and_likes(user: &mut GooseUser) -> TransactionResu
         )
         .await?;
 
-    let chat_created_res: domain::common::OkResult<domain::common::ChatCreated> =
-        response.json().await?;
-    let chat_id = chat_created_res.ok.chat_id;
+    let chat_created_res: domain::common::ChatCreated = response.json().await?;
+    let chat_id = chat_created_res.chat_id;
 
     // 2. Add Messages from each participant
     let mut all_participants = participants.clone();
@@ -251,8 +249,8 @@ async fn create_chat_messages_and_likes(user: &mut GooseUser) -> TransactionResu
                 )
                 .await?;
 
-            let message_id_res: domain::common::OkResult<String> = response.json().await?;
-            let message_id = message_id_res.ok;
+            let message_id_res: domain::common::AddMessageResponse = response.json().await?;
+            let message_id = message_id_res.message_id;
             message_ids.push(message_id.clone());
 
             // 3. Like Message from 1-2 random users

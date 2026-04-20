@@ -80,6 +80,20 @@ pub mod common {
         pub user_id: String,
         pub content: String,
     }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    // #[serde(rename_all = "kebab-case")]
+    pub struct AddCommentResponse {
+        pub post_id: String,
+        pub comment_id: String,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    // #[serde(rename_all = "kebab-case")]
+    pub struct AddMessageResponse {
+        pub chat_id: String,
+        pub message_id: String,
+    }
 }
 
 pub mod social_net {

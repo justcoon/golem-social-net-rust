@@ -58,8 +58,8 @@ const performSearch = async () => {
   try {
     const response = await api.searchUsers(searchQuery);
     const data = response.data as any; // Cast to any to access dynamic structure
-    if (data && Array.isArray(data.ok)) {
-        results.value = data.ok;
+    if (data && Array.isArray(data)) {
+        results.value = data;
     } else {
         results.value = [];
     }
@@ -335,16 +335,16 @@ onUnmounted(() => {
     <div v-else-if="results.length > 0" class="space-y-4">
       <div 
         v-for="user in results" 
-        :key="user['user-id']"
-        @click="goToProfile(user['user-id'])"
+        :key="user.user_id"
+        @click="goToProfile(user.user_id)"
         class="flex items-center p-4 bg-neutral-900 border border-neutral-800 rounded-xl hover:bg-neutral-800 transition cursor-pointer group"
       >
         <div class="w-12 h-12 rounded-full bg-neutral-800 flex items-center justify-center text-xl font-bold text-gray-300 mr-4 border-2 border-neutral-700 group-hover:border-purple-500 transition">
-          {{ user['user-id'].charAt(0).toUpperCase() }}
+          {{ user.user_id.charAt(0).toUpperCase() }}
         </div>
         <div>
-           <h3 class="font-bold text-white group-hover:text-purple-400 transition">{{ user.name || user['user-id'] }}</h3>
-           <p class="text-sm text-gray-500">@{{ user['user-id'] }}</p>
+           <h3 class="font-bold text-white group-hover:text-purple-400 transition">{{ user.name || user.user_id }}</h3>
+           <p class="text-sm text-gray-500">@{{ user.user_id }}</p>
         </div>
       </div>
     </div>

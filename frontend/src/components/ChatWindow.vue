@@ -28,7 +28,7 @@ function scrollToBottom() {
 
 // Scroll to bottom when new messages arrive or when chat is selected
 watch(() => activeChat.value?.messages.length, scrollToBottom);
-watch(() => activeChat.value?.['chat-id'], scrollToBottom);
+watch(() => activeChat.value?.chat_id, scrollToBottom);
 
 async function handleSendMessage() {
   if (!newMessage.value.trim()) return;
@@ -54,7 +54,7 @@ async function handleAddParticipant() {
     if (selectedToAdd.value.length === 0 || !activeChat.value) return;
     addParticipantError.value = null;
     try {
-        await chatStore.addParticipant(activeChat.value['chat-id'], selectedToAdd.value);
+        await chatStore.addParticipant(activeChat.value.chat_id, selectedToAdd.value);
         selectedToAdd.value = [];
         isAddingParticipant.value = false;
     } catch (e: any) {
@@ -87,7 +87,7 @@ async function handleAddParticipant() {
                 <div class="relative w-48">
                     <ConnectionSelect 
                         v-model="selectedToAdd"
-                        :connections="userStore.user?.['connected-users'] || []"
+                        :connections="userStore.user?.connected_users || []"
                         :exclude-ids="activeChat.participants"
                         placeholder="Select users..."
                     />
@@ -131,12 +131,12 @@ async function handleAddParticipant() {
         
         <ChatMessage 
           v-for="msg in activeChat.messages" 
-          :key="msg['message-id']"
+          :key="msg.message_id"
           :message="msg"
           :current-user-id="userId"
-          @like="(type) => handleLike(msg['message-id'], type)"
-          @unlike="() => handleUnlike(msg['message-id'])"
-          @delete="() => handleDeleteMessage(msg['message-id'])"
+          @like="(type) => handleLike(msg.message_id, type)"
+          @unlike="() => handleUnlike(msg.message_id)"
+          @delete="() => handleDeleteMessage(msg.message_id)"
         />
       </div>
 
