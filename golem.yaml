@@ -1,23 +1,48 @@
 # Schema for IDEA:
-# $schema: https://schema.golem.cloud/app/golem/1.4.2/golem.schema.json
+# $schema: https://schema.golem.cloud/app/golem/1.5.0-dev.2/golem.schema.json
 # Schema for vscode-yaml:
-# yaml-language-server: $schema=https://schema.golem.cloud/app/golem/1.4.2/golem.schema.json
+# yaml-language-server: $schema=https://schema.golem.cloud/app/golem/1.5.0-dev.2/golem.schema.json
 
 # Field reference: https://learn.golem.cloud/app-manifest#field-reference
 # Creating HTTP APIs: https://learn.golem.cloud/invoke/making-custom-apis
 
-app: golem-social-net-rust
+manifestVersion: 1.5.0
 
-includes:
-- common-*/golem.yaml
-- components-*/*/golem.yaml
-witDeps:
-- .wit/wit/deps
+app: golem-social-net-rust
 
 environments:
   local:
     server: local
-    componentPresets: debug
+    componentPresets: release
   cloud:
     server: cloud
     componentPresets: release
+components:
+  social-net-rust:social-net:
+    dir: ""
+    templates: rust
+
+    # Component environment variables can reference system environment variables with minijinja syntax:
+    #
+    #   env:
+    #     ENV_VAR_1: "{{ ENV_VAR_1 }}"
+    #     RENAMED_VAR_2: "{{ ENV_VAR_2 }}"
+    #     COMPOSED_VAR_3: "{{ ENV_VAR_3 }}-{{ ENV_VAR_4}}"
+    #
+    env:
+httpApi:
+  deployments:
+    local:
+    - domain: localhost:9006
+      agents:
+        UserAgent: {}
+        UserSearchAgent: {}
+        UserPostsAgent: {}
+        UserChatsAgent: {}
+        PostAgent: {}
+        ChatAgent: {}
+        UserChatsViewAgent: {}
+        UserPostsViewAgent: {}
+        UserTimelineViewAgent: {}
+        UserChatsUpdatesAgent: {}
+        UserTimelineUpdatesAgent: {}

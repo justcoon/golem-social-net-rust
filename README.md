@@ -77,7 +77,7 @@ All core agents (User, User Index, Post, User Posts, User Timeline) have their s
 ## Quick Start
 
 1. **Prerequisites**:
-    - Install [Golem CLI](https://learn.golem.cloud/cli) (version 1.4.0+)
+    - Install [Golem CLI](https://learn.golem.cloud/cli) (version 1.5.0+)
     - [Running Golem Environment](https://learn.golem.cloud/quickstart#running-golem)
 
    See [Golem Quickstart](https://learn.golem.cloud/quickstart) for more information.

@@ -26,26 +26,26 @@ const replyContent = ref('');
 const isSubmitting = ref(false);
 const isDeleting = ref(false);
 
-const canDelete = computed(() => userId.value === props.comment['created-by']);
+const canDelete = computed(() => userId.value === props.comment.created_by);
 
 const childComments = computed(() => {
-  return props.allComments.filter(c => c['parent-comment-id'] === props.comment['comment-id'])
-    .sort((a, b) => new Date(a['created-at'].timestamp).getTime() - new Date(b['created-at'].timestamp).getTime());
+  return props.allComments.filter(c => c.parent_comment_id === props.comment.comment_id)
+    .sort((a, b) => new Date(a.created_at.timestamp).getTime() - new Date(b.created_at.timestamp).getTime());
 });
 
 const totalNestedCount = computed(() => {
   let count = childComments.value.length;
   childComments.value.forEach(child => {
-    count += countSubReplies(child['comment-id']);
+    count += countSubReplies(child.comment_id);
   });
   return count;
 });
 
 function countSubReplies(commentId: string): number {
-  const babies = props.allComments.filter(c => c['parent-comment-id'] === commentId);
+  const babies = props.allComments.filter(c => c.parent_comment_id === commentId);
   let count = babies.length;
   babies.forEach(b => {
-    count += countSubReplies(b['comment-id']);
+    count += countSubReplies(b.comment_id);
   });
   return count;
 }
@@ -57,8 +57,8 @@ async function handleDelete() {
   
   isDeleting.value = true;
   try {
-    await api.deleteComment(props.postId, props.comment['comment-id']);
-    emit('comment-deleted', props.comment['comment-id']);
+    await api.deleteComment(props.postId, props.comment.comment_id);
+    emit('comment-deleted', props.comment.comment_id);
   } catch (error) {
     console.error('Failed to delete comment:', error);
     alert('Failed to delete comment');
@@ -84,7 +84,7 @@ async function handleLike(type: LikeType) {
   }
   
   try {
-    await api.likeComment(props.postId, props.comment['comment-id'], uid, type);
+    await api.likeComment(props.postId, props.comment.comment_id, uid, type);
   } catch (error) {
     console.error('Failed to like comment:', error);
     const currentIndex = likes.findIndex(([u]) => u === uid);
@@ -116,7 +116,7 @@ async function handleUnlike() {
   likes.splice(existingIndex, 1);
   
   try {
-    await api.unlikeComment(props.postId, props.comment['comment-id'], uid);
+    await api.unlikeComment(props.postId, props.comment.comment_id, uid);
   } catch (error) {
     console.error('Failed to unlike comment:', error);
     likes.push([uid, oldLike]);
@@ -128,14 +128,14 @@ async function submitReply() {
   
   isSubmitting.value = true;
   try {
-    const response = await api.addComment(props.postId, userId.value, replyContent.value, props.comment['comment-id']);
+    const response = await api.addComment(props.postId, userId.value, replyContent.value, props.comment.comment_id);
     
     const newCommentObj: Comment = {
-      'comment-id': response.data.ok,
+      comment_id: response.data.comment_id,
       content: replyContent.value,
-      'created-by': userId.value,
-      'created-at': { timestamp: new Date().toISOString() },
-      'parent-comment-id': props.comment['comment-id'],
+      created_by: userId.value,
+      created_at: { timestamp: new Date().toISOString() },
+      parent_comment_id: props.comment.comment_id,
       likes: []
     };
     
@@ -161,12 +161,12 @@ async function submitReply() {
           >
             {{ isCollapsed ? '+' : '−' }}
           </button>
-          <span class="text-xs font-bold text-gray-300">{{ comment['created-by'] }}</span>
+          <span class="text-xs font-bold text-gray-300">{{ comment.created_by }}</span>
           <span v-if="isCollapsed" class="text-[10px] text-gray-500 italic">
             collapsed {{ totalNestedCount > 0 ? `(${totalNestedCount} replies)` : '' }}
           </span>
         </div>
-        <span class="text-[10px] text-gray-600">{{ new Date(comment['created-at'].timestamp).toLocaleString() }}</span>
+        <span class="text-[10px] text-gray-600">{{ new Date(comment.created_at.timestamp).toLocaleString() }}</span>
         <button 
           v-if="canDelete" 
           @click="handleDelete" 
@@ -222,7 +222,7 @@ async function submitReply() {
     <div v-if="!isCollapsed && childComments.length > 0" class="nested-replies">
       <CommentItem 
         v-for="child in childComments" 
-        :key="child['comment-id']"
+        :key="child.comment_id"
         :comment="child"
         :all-comments="allComments"
         :post-id="postId"

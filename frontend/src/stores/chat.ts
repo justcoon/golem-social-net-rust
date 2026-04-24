@@ -13,7 +13,7 @@ export const useChatStore = defineStore('chat', () => {
     const isPolling = ref(false);
 
     const activeChat = computed(() =>
-        chats.value.find(c => c['chat-id'] === activeChatId.value) || null
+        chats.value.find(c => c.chat_id === activeChatId.value) || null
     );
 
     async function fetchChats() {
@@ -21,11 +21,11 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         try {
             const response = await api.getChats(userStore.userId);
-            if (response.data.ok) {
-                chats.value = response.data.ok;
+            if (response.data) {
+                chats.value = response.data;
                 // Update lastUpdate based on the most recent chat update
                 const latest = chats.value.reduce((latest, chat) => {
-                    const chatTime = new Date(chat['updated-at'].timestamp).getTime();
+                    const chatTime = new Date(chat.updated_at.timestamp).getTime();
                     return chatTime > latest ? chatTime : latest;
                 }, 0);
                 if (latest > 0) {
@@ -43,8 +43,8 @@ export const useChatStore = defineStore('chat', () => {
         if (!userStore.userId || !isPolling.value) return;
         try {
             const response = await api.getChatUpdates(userStore.userId, lastUpdate.value);
-            if (response.data.ok) {
-                const updates: ChatRef[] = response.data.ok;
+            if (response.data) {
+                const updates: ChatRef[] = response.data;
                 if (updates.length > 0) {
                     // If there are updates, refetch all chats to get full content
                     // In a real app we'd fetch only changed chats if API allowed it
@@ -92,11 +92,11 @@ export const useChatStore = defineStore('chat', () => {
         }
     }
 
-    async function toggleLike(messageId: string, likeType: LikeType = 'like') {
+    async function toggleLike(messageId: string, likeType: LikeType = 'Like') {
         if (!activeChatId.value || !userStore.userId) return;
         const chat = activeChat.value;
         if (!chat) return;
-        const message = chat.messages.find(m => m['message-id'] === messageId);
+        const message = chat.messages.find(m => m.message_id === messageId);
         if (!message) return;
 
         const existingLike = message.likes?.find(([uid]) => uid === userStore.userId);
@@ -119,8 +119,8 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         try {
             const response = await api.createChat(userStore.userId, participants);
-            if (response.data.ok) {
-                const chatId = response.data.ok['chat-id'];
+            if (response.data) {
+                const chatId = response.data.chat_id;
                 await fetchChats();
                 activeChatId.value = chatId;
                 return chatId;
@@ -137,7 +137,7 @@ export const useChatStore = defineStore('chat', () => {
         isLoading.value = true;
         try {
             const response = await api.addChatParticipant(chatId, participantIds);
-            if (response.data.ok) {
+            if (response.data) {
                 await fetchChats();
             }
         } catch (e: any) {
@@ -158,7 +158,7 @@ export const useChatStore = defineStore('chat', () => {
         );
 
         if (existing) {
-            activeChatId.value = existing['chat-id'];
+            activeChatId.value = existing.chat_id;
         } else {
             // Create new one
             await createNewChat([targetUserId]);

@@ -17,8 +17,8 @@ async function fetchTimeline(silent = false) {
   try {
     const response = await api.getTimeline(userStore.userId);
     const data = response.data as any;
-    if (data && Array.isArray(data.ok)) {
-        posts.value = data.ok;
+    if (data && Array.isArray(data)) {
+        posts.value = data;
     } else {
         posts.value = [];
     }
@@ -41,7 +41,7 @@ async function startPolling() {
             if (posts.value.length > 0) {
                 const newestPost = posts.value[0];
                 if (newestPost) {
-                    const createdAt = newestPost['created-at'];
+                    const createdAt = newestPost.created_at;
                     since = createdAt.timestamp;
                 }
             }
@@ -50,8 +50,8 @@ async function startPolling() {
                 const response = await api.getTimelineUpdates(userStore.userId, since);
                 const data = response.data as any;
                 
-                // If data.ok contains posts, it means there are updates
-                if (data && data.ok && Array.isArray(data.ok) && data.ok.length > 0) {
+                // If data contains posts, it means there are updates
+                if (data && Array.isArray(data) && data.length > 0) {
                     console.log('New posts detected, refreshing timeline...');
                     await fetchTimeline(true);
                 }
@@ -127,7 +127,7 @@ onUnmounted(() => {
     <div v-else class="space-y-6">
       <PostCard 
         v-for="post in posts" 
-        :key="post['post-id']" 
+        :key="post.post_id" 
         :post="post" 
       />
     </div>

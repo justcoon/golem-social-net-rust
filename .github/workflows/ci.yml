@@ -13,15 +13,15 @@ on:
         description: Golem version
         type: choice
         required: false
-        default: 1.4.2
+        default: 1.5.0
         options:
           - latest
           - master
-          - 1.4.2
+          - 1.5.0
 
 env:
   CARGO_TERM_COLOR: always
-  GOLEM_VERSION: ${{ github.event.inputs.golemversion != '' && github.event.inputs.golemversion || '1.4.2' }}
+  GOLEM_VERSION: ${{ github.event.inputs.golemversion != '' && github.event.inputs.golemversion || '1.5.0' }}
 
 jobs:
   setup-environment:
@@ -90,7 +90,7 @@ jobs:
           path: /usr/local/bin/golem*
           name: golem-tools
 
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     needs: setup-environment
     steps:
@@ -113,6 +113,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+      - name: Install Rust wasm32-wasip2 target
+        run: rustup target add wasm32-wasip2
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@v1.15.1
       - name: Install cargo-component
@@ -121,6 +123,32 @@ jobs:
         uses: arduino/setup-protoc@v3
       - name: Compile
         run: golem-cli build
+      - name: Start Golem server
+        run: |
+          golem server run &
+          SERVER_PID=$!
+          echo "Server PID: $SERVER_PID"
+          echo "Waiting for Golem server to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:9881/healthcheck > /dev/null; then
+              echo "Golem server is ready"
+              break
+            fi
+            echo "Attempt $i: Server not ready yet..."
+            sleep 2
+          done
+      - name: Deploy components
+        run: golem deploy --reset --yes
+      - name: Smoke test deployment
+        run: |
+          echo "Testing basic deployment..."
+          golem component list
+          echo "Deployment test completed successfully"
+      - name: Verify OpenAPI spec
+        run: |
+          echo "Fetching OpenAPI specification..."
+          curl http://localhost:9006/openapi.yaml
+          echo "OpenAPI spec verification completed"
       - name: Save components
         uses: actions/upload-artifact@v4
         with:
@@ -128,7 +156,7 @@ jobs:
           name: components
 
   auto-merge:
-    needs: build
+    needs: build-and-test
     if: github.event.review.state == 'approved'
     runs-on: ubuntu-latest
     steps:

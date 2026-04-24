@@ -113,7 +113,7 @@ onUnmounted(() => {
           </div>
           <div>
             <div class="text-sm text-gray-200">{{ id }}</div>
-            <div class="text-[10px] text-gray-500 capitalize">{{ data['connection-types'].join(', ') }}</div>
+            <div class="text-[10px] text-gray-500 capitalize">{{ data.connection_types.join(', ') }}</div>
           </div>
         </div>
         <div v-if="selectedIds.includes(id)" class="text-purple-500">

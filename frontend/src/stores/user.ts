@@ -13,8 +13,8 @@ export const useUserStore = defineStore('user', () => {
         if (!userId.value) return;
         try {
             const response = await api.getUser(userId.value);
-            if (response.data.ok) {
-                user.value = response.data.ok;
+            if (response.data) {
+                user.value = response.data;
             }
         } catch (e) {
             console.error('Failed to fetch user profile:', e);
