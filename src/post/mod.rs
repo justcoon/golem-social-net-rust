@@ -113,11 +113,10 @@ impl Post {
 
                 // Find all child comments and recursively collect their descendants
                 for comment in comments.values() {
-                    if let Some(parent_id) = &comment.parent_comment_id {
-                        if parent_id == comment_id {
-                            to_remove
-                                .extend(collect_comments_to_remove(comments, &comment.comment_id));
-                        }
+                    if let Some(parent_id) = &comment.parent_comment_id
+                        && parent_id == comment_id
+                    {
+                        to_remove.extend(collect_comments_to_remove(comments, &comment.comment_id));
                     }
                 }
 

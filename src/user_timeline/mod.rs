@@ -254,7 +254,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
                     .unwrap_or_default()
                     .into()
             })
-            .unwrap_or_else(|| chrono::Utc::now());
+            .unwrap_or_else(chrono::Utc::now);
 
         let timeline_updates = UserTimelineAgentClient::get(user_id.clone())
             .get_updates(updates_since)

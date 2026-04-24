@@ -297,7 +297,7 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
                     .unwrap_or_default()
                     .into()
             })
-            .unwrap_or_else(|| chrono::Utc::now());
+            .unwrap_or_else(chrono::Utc::now);
 
         let user_chats_updates = UserChatsAgentClient::get(user_id.clone())
             .get_updates(updates_since)
