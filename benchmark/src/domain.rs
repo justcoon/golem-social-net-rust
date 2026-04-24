@@ -19,24 +19,6 @@ pub mod common {
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     // #[serde(rename_all = "kebab-case")]
-    pub struct OkResult<T> {
-        pub ok: T,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
-    // #[serde(rename_all = "kebab-case")]
-    pub struct ErrResult {
-        pub err: ErrDetail,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
-    // #[serde(rename_all = "kebab-case")]
-    pub struct ErrDetail {
-        pub message: String,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
-    // #[serde(rename_all = "kebab-case")]
     pub struct PostCreated {
         pub post_id: String,
     }
