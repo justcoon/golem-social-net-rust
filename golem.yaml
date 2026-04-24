@@ -13,7 +13,6 @@ app: golem-social-net-rust
 environments:
   local:
     server: local
-#    componentPresets: debug
     componentPresets: release
   cloud:
     server: cloud
@@ -47,6 +46,3 @@ httpApi:
         UserTimelineViewAgent: {}
         UserChatsUpdatesAgent: {}
         UserTimelineUpdatesAgent: {}
-#        UserIndexAgent: {}
-#        TimelinesUpdaterAgent: {}
-#        UserTimelineAgent: {}
