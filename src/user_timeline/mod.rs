@@ -289,13 +289,15 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
 trait UserTimelineUpdatesAgent {
     fn new() -> Self;
 
-    #[endpoint(get = "/{user_id}/timeline/posts/updates?since={since}")]
+    #[endpoint(
+        get = "/{user_id}/timeline/posts/updates?since={since}&iter-wait-time={iter_wait_time}&max-wait-time={max_wait_time}"
+    )]
     async fn get_posts_updates(
         &mut self,
         user_id: String,
         since: Option<String>,
-        // iter_wait_time: Option<u32>,
-        // max_wait_time: Option<u32>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>>;
 }
 
@@ -311,11 +313,9 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
         &mut self,
         user_id: String,
         since: Option<String>,
-        // iter_wait_time: Option<u32>,
-        // max_wait_time: Option<u32>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>> {
-        let iter_wait_time: Option<u32> = None;
-        let max_wait_time: Option<u32> = None;
         let updates_since = since.map(|s| {
             chrono::DateTime::parse_from_rfc3339(&s)
                 .unwrap_or_default()

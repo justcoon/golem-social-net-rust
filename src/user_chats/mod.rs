@@ -329,13 +329,15 @@ impl UserChatsViewAgent for UserChatsViewAgentImpl {
 trait UserChatsUpdatesAgent {
     fn new() -> Self;
 
-    #[endpoint(get = "/{user_id}/chats/updates?since={since}")]
+    #[endpoint(
+        get = "/{user_id}/chats/updates?since={since}&iter-wait-time={iter_wait_time}&max-wait-time={max_wait_time}"
+    )]
     async fn get_chats_updates(
         &mut self,
         user_id: String,
         since: Option<String>,
-        // iter_wait_time: Option<u32>,
-        // max_wait_time: Option<u32>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>>;
 }
 
@@ -351,11 +353,9 @@ impl UserChatsUpdatesAgent for UserChatsUpdatesAgentImpl {
         &mut self,
         user_id: String,
         since: Option<String>,
-        // iter_wait_time: Option<u32>,
-        // max_wait_time: Option<u32>,
+        iter_wait_time: Option<u32>,
+        max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>> {
-        let iter_wait_time: Option<u32> = None;
-        let max_wait_time: Option<u32> = None;
         let updates_since = since.map(|s| {
             chrono::DateTime::parse_from_rfc3339(&s)
                 .unwrap_or_default()
