@@ -30,6 +30,12 @@ components:
     #     COMPOSED_VAR_3: "{{ ENV_VAR_3 }}-{{ ENV_VAR_4}}"
     #
     env:
+mcp:
+  deployments:
+    local:
+      - domain: localhost:9007
+        agents:
+          UserAgent: {}
 httpApi:
   deployments:
     local:
