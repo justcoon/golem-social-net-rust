@@ -433,7 +433,7 @@ where
     let mut result: Option<Vec<T>> = None;
 
     while !done {
-        println!(
+        log::info!(
             "{} - user id: {}, updates since: {}, elapsed time: {}ms, max wait time: {}ms",
             log_prefix,
             user_id,
