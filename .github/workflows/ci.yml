@@ -13,15 +13,15 @@ on:
         description: Golem version
         type: choice
         required: false
-        default: 1.5.2
+        default: 1.5.10
         options:
           - latest
           - master
-          - 1.5.2
+          - 1.5.10
 
 env:
   CARGO_TERM_COLOR: always
-  GOLEM_VERSION: ${{ github.event.inputs.golemversion != '' && github.event.inputs.golemversion || '1.5.2' }}
+  GOLEM_VERSION: ${{ github.event.inputs.golemversion != '' && github.event.inputs.golemversion || '1.5.10' }}
 
 jobs:
   setup-environment:
@@ -138,6 +138,8 @@ jobs:
             sleep 2
           done
       - name: Deploy components
+        env:
+          OTLP_ENDPOINT: http://localhost:4318
         run: golem deploy --reset --yes
       - name: Smoke test deployment
         run: |

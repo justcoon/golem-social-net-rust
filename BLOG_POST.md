@@ -26,7 +26,7 @@ The system is composed of a constellation of agents, split into two main categor
 
 The system manages interactions through a mix of synchronous RPC calls and asynchronous invocations:
 
-1.  **Request Entry**: The **API Gateway** receives REST requests and routes them to the specific agent (e.g., `GET /users/{id}` -> `User Agent {id}`) using the HTTP API configuration from the manifest.
+1.  **Request Entry**: The **API Gateway** receives REST requests and routes them to the appropriate agent (e.g., `GET /users/{id}` → `User Agent {id}`) based on the HTTP‑endpoint definitions (mount paths) of each agent and the `httpApi` configuration in `golem.yaml`.
 
 2.  **User Registration**: When a new `User Agent` is created for the first time, it automatically determines the appropriate shard using MD5 hashing and triggers the corresponding **User Index Agent** shard to register its ID, ensuring the sharded registry is always up-to-date.
 

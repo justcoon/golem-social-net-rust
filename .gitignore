@@ -13,3 +13,5 @@
 *.iml
 package-lock.json
 
+.env
+**/.env
