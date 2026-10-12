@@ -20,7 +20,7 @@ Golem agents can be exposed over HTTP using code-first route definitions. This i
 | `golem-make-http-request-rust` | Making outgoing HTTP requests from agent code, especially when calling other Golem agent endpoints (required for correct JSON body formatting) |
 | `golem-add-http-auth-rust` | Enabling authentication |
 | `golem-add-cors-rust` | Configuring CORS allowed origins |
-| `golem-configure-api-domain` | Setting up `httpApi` in `golem.yaml`, security schemes, domain deployments |
+| `golem-configure-api-domain` | Setting up `httpApi` in `golem.yaml`, security schemes, domain deployments, and `subdomain` versus `domain` choices |
 
 ## Steps
 
@@ -71,6 +71,37 @@ fn delete_item(&mut self, id: String);
 Endpoint paths are relative to the mount path. A method can have multiple `#[endpoint(...)]` attributes to expose it under different routes.
 
 For details on how path variables, query parameters, headers, and request bodies map to method parameters, load the `golem-http-params-rust` skill.
+
+## Durable Stream Route Customization
+
+For a method with stream inputs or outputs, add `durable_streams(...)` inside `#[endpoint(...)]` to customize its Durable Streams HTTP surface:
+
+```rust
+#[endpoint(
+    post = "/events",
+    durable_streams(
+        input("input", name = "uploads"),
+        output(
+            "$result",
+            name = "events",
+            content_type = "application/vnd.example.events"
+        ),
+        allow_external_writes = true,
+        allow_stream_delete = false,
+        allow_invocation_delete = false,
+        max_concurrent_readers_per_stream = 8,
+        max_append_requests_per_second_per_stream = 25,
+    )
+)]
+fn events(&mut self, input: AgentStream<u8>) -> AgentStream<u8>;
+```
+
+- `input` and `output` select canonical top-level stream slots. `$result` is the only implicit result selector.
+- `name` changes the public URL and OpenAPI name; the canonical name is no longer accepted in the public URL.
+- `content_type` is allowed only for a direct `AgentStream<u8>` slot and must be a concrete non-text, non-JSON MIME type without parameters or wildcards. JSON-shaped streams stay `application/json`; do not use `text/plain` for `AgentStream<String>`. SSE still uses `text/event-stream` and base64 data.
+- The three `allow_*` options default to `true`. Setting one to `false` removes that protocol operation and produces `405` with an exact `Allow` header.
+- The live-reader limit is 1 through 16 and applies to long-poll and SSE. The append limit must be positive and cannot be set when external writes are disabled. A route-local limit rejection is `429` with `Retry-After: 1`.
+- Limits are maintained per route and worker-service node, not as a cluster-wide quota.
 
 ## Phantom Agents
 
@@ -193,7 +224,7 @@ impl TaskAgent for TaskAgentImpl {
 httpApi:
   deployments:
     local:
-    - domain: my-app.localhost:9006
+    - subdomain: my-app  # resolves to my-app.localhost:9006 by default
       agents:
         TaskAgent: {}
 ```

@@ -2,14 +2,17 @@ use crate::common::{ErrorResponse, LikeType, UserConnectionType, query};
 use crate::user::UserAgentClient;
 use crate::user_timeline::{PostRef, UserTimelineAgentClient};
 use futures::future::join_all;
-use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
+use golem_rust::{
+    FromSchema, FromWire, IntoSchema, IntoWire, WireSchema, agent_definition, agent_implementation,
+    endpoint,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // max number of comments
 const COMMENTS_MAX_COUNT: usize = 2000;
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct Comment {
     pub comment_id: String,
     pub parent_comment_id: Option<String>,
@@ -36,7 +39,7 @@ impl Comment {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct Post {
     pub post_id: String,
     pub content: String,
@@ -190,12 +193,12 @@ impl Post {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UpdateResponse {
     pub post_id: String,
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct AddCommentResponse {
     pub post_id: String,
     pub comment_id: String,
@@ -451,10 +454,20 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<Post> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -462,7 +475,7 @@ impl PostAgent for PostAgentImpl {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct PostUpdate {
     pub post_id: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -479,7 +492,7 @@ impl PostUpdate {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct PostUpdates {
     pub user_id: String,
     pub updates: Vec<PostUpdate>,
@@ -568,10 +581,12 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         self.execute_posts_updates().await;
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        _context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: PostUpdates = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        Ok(Self { state: data })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {

@@ -1,14 +1,17 @@
 use crate::common::UserConnectionType;
 use crate::common::{poll_for_updates, query, query::Query};
 use crate::post::{Post, fetch_posts_by_ids, fetch_posts_by_ids_and_query};
-use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
+use golem_rust::{
+    FromSchema, FromWire, IntoSchema, IntoWire, WireSchema, agent_definition, agent_implementation,
+    endpoint,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 // max number of posts in timeline
 const POSTS_MAX_COUNT: usize = 500;
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct PostRef {
     pub post_id: String,
     pub created_by: String,
@@ -59,7 +62,7 @@ impl PostRef {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UserTimeline {
     pub user_id: String,
     pub posts: Vec<PostRef>,
@@ -98,7 +101,7 @@ impl UserTimeline {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UserTimelineUpdates {
     pub user_id: String,
     pub posts: Vec<PostRef>,
@@ -178,10 +181,20 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         })
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<UserTimeline> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {

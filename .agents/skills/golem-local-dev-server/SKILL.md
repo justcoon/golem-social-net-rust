@@ -29,8 +29,9 @@ golem server run
 | `--mcp-port <PORT>` | Port to serve the MCP server on | `9007` |
 | `--ports-file <PATH>` | Write discovered startup ports to this JSON file | _(none)_ |
 | `--data-dir <PATH>` | Directory to store data in | Platform-specific (see below) |
+| `--system-memory-override <SIZE>` | Override detected system memory, e.g. `2GiB`; not a hard RSS limit | Environment variable, manifest, then host/cgroup detection |
 | `--clean` | Clean the data directory before starting | `false` |
-| `--agent-filesystem-root <PATH>` | Use deterministic agent filesystem directories rooted at the given path instead of random temp directories. Layout: `<root>/<environment_id>/<component_id>/<agent_name>/` | _(none)_ |
+| `--agent-filesystem-root <PATH>` | Use deterministic agent filesystem directories rooted at the given path instead of random temp directories. Layout: `<root>/<environment_id>/<component_id>/<agent_segment>/`; the agent segment is the agent name with each character that is not an ASCII letter, a digit, `-` or `_` replaced by `_`, cut to 32 characters, then `-` and the BLAKE3 hash of the agent id | _(none)_ |
 
 #### Examples
 
@@ -86,6 +87,55 @@ When `--ports-file` is specified, the server writes a JSON file with the actual 
 }
 ```
 
+The application manifest can configure the built-in local preset in its `localServer` section. `routerAddr` and `routerPort` define the main API endpoint used both by `golem server run` and by other `golem` commands that target the built-in local preset. `customRequestPort` and `mcpPort` control how deployment `subdomain` values expand: HTTP API domains resolve to `<label>.localhost:<customRequestPort>` and MCP domains resolve to `<label>.localhost:<mcpPort>`. Requests are routed by matching their `Host` header against that expansion, so the server has to bind the same ports: `golem server run` warns when its `--custom-request-port` or `--mcp-port` (including `0`) differs from what the manifest expands to, and those deployments are not reachable until the values match. Use nonzero ports for deployments that register persistent subdomains. Load `golem-configure-api-domain` or `golem-configure-mcp-server` for the full `subdomain` versus `domain` rules.
+
+#### Memory Budget
+
+Override detected system memory to leave room for other applications and control how much memory a local server uses for agent admission and eviction. This is useful for everyday development, smaller machines, and running multiple servers. Without an override, Golem detects host or cgroup memory; on macOS, a local server sees the full host RAM.
+
+```shell
+golem server run --system-memory-override 2GiB
+GOLEM_LOCAL_SERVER_SYSTEM_MEMORY_OVERRIDE=2GiB golem server run
+```
+
+All three inputs use the same positive byte-size format. Units are case-insensitive: `1mb` and `1MB` mean 1,000,000 bytes; `1MiB` means 1,048,576 bytes. Whole-number quantities and ASCII spaces are accepted; use `1536 MiB` instead of `1.5 GiB`. A value without a unit means bytes. Quote unitless values in YAML. Precedence is the `--system-memory-override` flag, then `GOLEM_LOCAL_SERVER_SYSTEM_MEMORY_OVERRIDE`, then `localServer.systemMemoryOverride` in the manifest, then automatic detection. These map to the executor's `memory.system_memory_override`. The executor uses 80% for agent admission and eviction, leaving 20% for host overhead. This is not an OS-enforced process RSS limit; compilation and other host allocations can exceed it. Check the startup log's measured memory limit and monitor RSS under load.
+
+```yaml
+localServer:
+  systemMemoryOverride: 2GiB
+```
+
+#### Manual Testing with Free Ports
+
+For manual testing in temporary apps, pass `0` directly as `golem server run` flags to let the OS assign free ports:
+
+```shell
+golem server run \
+  --router-port 0 \
+  --custom-request-port 0 \
+  --mcp-port 0 \
+  --ports-file .golem/ports.json \
+  --data-dir .golem/data
+```
+
+The `0` flag values request OS-assigned free ports. The `--ports-file` path records the actual bound ports and is also the readiness signal; wait for `.golem/ports.json` before sending requests.
+
+Do not put `0` in manifest `localServer` port fields. Manifest `localServer.customRequestPort` and `localServer.mcpPort` values are used for deployment `subdomain` expansion and must be stable nonzero ports.
+
+For persistent local deployment subdomains, use stable manifest ports or omit the port fields to use the defaults:
+
+```yaml
+localServer:
+  routerAddr: 0.0.0.0
+  routerPort: 9881
+  customRequestPort: 9006
+  mcpPort: 9007
+  portsFile: .golem/ports.json
+  dataDir: .golem/data
+```
+
+`routerAddr` and `routerPort` define where the built-in local preset is reachable: `golem server run` binds the server there, and other `golem` commands connect there. `routerAddr` must be an IPv4 address literal; host names are not supported. When the server binds to `0.0.0.0`, commands connect through `127.0.0.1`. `routerAddr` affects only the main API: the HTTP API and MCP listeners always bind all interfaces, and deployment subdomains always expand to `<label>.localhost:<port>`, which resolves only on the machine running the server. For access from other machines, use `domain` instead of `subdomain`. Setting only `portsFile` records the selected ports but does not request free ports. Explicit CLI flags such as `--router-port`, `--custom-request-port`, `--mcp-port`, `--ports-file`, and `--data-dir` override the manifest values for `server run`; overriding `--custom-request-port` or `--mcp-port` does not change the subdomain expansion, so keep them equal to the manifest values when subdomain deployments are used.
+
 #### Warning: `--agent-filesystem-root`
 
 **Do not use `--agent-filesystem-root` unless you have a specific reason.** This option replaces the default random temporary directories with deterministic paths. Manually modifying files under this root while agents are running can break durable execution guarantees — Golem relies on controlling the agent filesystem to ensure consistency across restarts and replays. This flag is intended for advanced debugging and inspection scenarios only.
@@ -100,9 +150,11 @@ golem server clean
 
 This removes all stored state including deployed components, agent data, and operation logs.
 
+When a manifest is discovered, this removes `localServer.dataDir`. Without a manifest it removes the platform default data directory. Pass `-X` to ignore a discovered manifest and clean the platform default. The CLI displays the resolved absolute path and asks for confirmation before deleting it; filesystem roots are always rejected.
+
 ## Important Notes
 
-- **`--clean` deletes all state**: Running `golem server run --clean` deletes all existing agents, deployed components, and data. Never run it without explicitly asking the user for confirmation first.
+- **Cleanup deletes all state**: Both `golem server clean` and `golem server run --clean` delete all existing agents, deployed components, and data from the resolved directory. Never run either command without explicitly asking the user for confirmation first. In a non-interactive workflow, pass `--yes` only after the user approves the exact target path.
 - **The server runs in the foreground**: It blocks the terminal. Run it in a separate terminal or background process before deploying or invoking agents.
 - **Deploy after starting**: Components must be deployed with `golem deploy` after the server is running before agents can be invoked.
 - **File limits**: On startup the server automatically attempts to increase the OS file descriptor limit to 1,000,000 for better performance.
