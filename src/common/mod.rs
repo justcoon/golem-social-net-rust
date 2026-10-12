@@ -1,4 +1,4 @@
-use golem_rust::Schema;
+use golem_rust::{FromSchema, FromWire, IntoSchema, IntoWire, WireSchema};
 use md5;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -7,7 +7,20 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-#[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Serialize,
+    Deserialize,
+    IntoSchema,
+    FromSchema,
+    IntoWire,
+    FromWire,
+    WireSchema,
+    Debug,
+    Hash,
+    Eq,
+    PartialEq,
+)]
 pub enum UserConnectionType {
     Friend,
     Follower,
@@ -34,7 +47,20 @@ impl Display for UserConnectionType {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize, Debug, Hash, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Serialize,
+    Deserialize,
+    IntoSchema,
+    FromSchema,
+    IntoWire,
+    FromWire,
+    WireSchema,
+    Debug,
+    Hash,
+    Eq,
+    PartialEq,
+)]
 pub enum LikeType {
     Like,
     Insightful,
@@ -42,7 +68,7 @@ pub enum LikeType {
     Dislike,
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct ErrorResponse {
     pub message: String,
 }
@@ -83,7 +109,7 @@ impl Display for LikeType {
 }
 
 pub(crate) mod query {
-    use golem_rust::Schema;
+    use golem_rust::{FromSchema, FromWire, IntoSchema, IntoWire, WireSchema};
     use std::fmt::{Display, Formatter};
 
     pub fn opt_text_matches(text: Option<String>, query: &str) -> bool {
@@ -132,7 +158,7 @@ pub(crate) mod query {
         tokens
     }
 
-    #[derive(Schema, Clone, Debug)]
+    #[derive(Clone, Debug, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
     pub struct Query {
         pub terms: Vec<String>,
         pub field_filters: Vec<(String, String)>,

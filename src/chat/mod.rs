@@ -1,13 +1,16 @@
 use crate::common::{ErrorResponse, LikeType, query};
 use crate::user_chats::UserChatsAgentClient;
 use futures::future::join_all;
-use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
+use golem_rust::{
+    FromSchema, FromWire, IntoSchema, IntoWire, WireSchema, agent_definition, agent_implementation,
+    endpoint,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 const MAX_CHAT_LENGTH: usize = 2000;
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct Message {
     pub message_id: String,
     pub content: String,
@@ -32,11 +35,11 @@ impl Message {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct Chat {
     pub chat_id: String,
     pub created_by: String,
-    pub participants: HashSet<String>,
+    pub participants: Vec<String>,
     pub messages: Vec<Message>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -48,7 +51,7 @@ impl Chat {
         Chat {
             chat_id,
             messages: vec![],
-            participants: HashSet::new(),
+            participants: vec![],
             created_by: "".to_string(),
             created_at: now,
             updated_at: now,
@@ -144,12 +147,12 @@ impl Chat {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UpdateResponse {
     pub chat_id: String,
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct AddMessageResponse {
     pub chat_id: String,
     pub message_id: String,
@@ -172,7 +175,7 @@ trait ChatAgent {
     #[endpoint(put = "/participants")]
     fn add_participants(
         &mut self,
-        participants: HashSet<String>,
+        participants: Vec<String>,
     ) -> Result<UpdateResponse, ErrorResponse>;
 
     #[endpoint(delete = "/messages/{message_id}")]
@@ -197,7 +200,7 @@ trait ChatAgent {
 
     fn init_chat(
         &mut self,
-        participants_ids: HashSet<String>,
+        participants_ids: Vec<String>,
         created_by: String,
         created_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), String>;
@@ -237,11 +240,11 @@ impl ChatAgent for ChatAgentImpl {
 
     fn init_chat(
         &mut self,
-        participants_ids: HashSet<String>,
+        participants_ids: Vec<String>,
         created_by: String,
         created_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), String> {
-        let mut participants_ids = participants_ids.clone();
+        let mut participants_ids = HashSet::from_iter(participants_ids);
         participants_ids.insert(created_by.clone());
 
         if self.state.is_some() {
@@ -272,7 +275,7 @@ impl ChatAgent for ChatAgentImpl {
 
     fn add_participants(
         &mut self,
-        participants: HashSet<String>,
+        participants: Vec<String>,
     ) -> Result<UpdateResponse, ErrorResponse> {
         if self.state.is_none() {
             Err("Chat not exists".into())
@@ -290,7 +293,7 @@ impl ChatAgent for ChatAgentImpl {
                         "add participants - new participants: {}",
                         new_participants_ids.len()
                     );
-                    let old_participants_ids = state.participants.clone();
+                    let old_participants_ids = HashSet::from_iter(state.participants.clone());
 
                     state.participants.extend(new_participants_ids.clone());
                     state.updated_at = chrono::Utc::now();
@@ -332,7 +335,7 @@ impl ChatAgent for ChatAgentImpl {
                     let id = state.add_message(user_id.clone(), content.clone());
                     execute_chat_updates(
                         state.chat_id.clone(),
-                        state.participants.clone(),
+                        HashSet::from_iter(state.participants.clone()),
                         state.updated_at,
                     );
                     Ok(AddMessageResponse {
@@ -353,7 +356,7 @@ impl ChatAgent for ChatAgentImpl {
                 if state.remove_message(message_id) {
                     execute_chat_updates(
                         state.chat_id.clone(),
-                        state.participants.clone(),
+                        HashSet::from_iter(state.participants.clone()),
                         state.updated_at,
                     );
                     Ok(UpdateResponse {
@@ -385,7 +388,7 @@ impl ChatAgent for ChatAgentImpl {
                 if state.set_message_like(message_id.clone(), user_id.clone(), like_type) {
                     execute_chat_updates(
                         state.chat_id.clone(),
-                        state.participants.clone(),
+                        HashSet::from_iter(state.participants.clone()),
                         state.updated_at,
                     );
                     Ok(UpdateResponse {
@@ -415,7 +418,7 @@ impl ChatAgent for ChatAgentImpl {
                 if state.remove_message_like(message_id, user_id.clone()) {
                     execute_chat_updates(
                         state.chat_id.clone(),
-                        state.participants.clone(),
+                        HashSet::from_iter(state.participants.clone()),
                         state.updated_at,
                     );
                     Ok(UpdateResponse {
@@ -428,10 +431,20 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<Chat> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -517,8 +530,8 @@ mod tests {
     fn create_test_chat() -> Chat {
         let mut chat = Chat::new("test-chat-1".to_string());
         chat.created_by = "user1".to_string();
-        chat.participants.insert("user1".to_string());
-        chat.participants.insert("user2".to_string());
+        chat.participants.push("user1".to_string());
+        chat.participants.push("user2".to_string());
         chat
     }
 

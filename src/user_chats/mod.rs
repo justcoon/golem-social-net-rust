@@ -1,10 +1,12 @@
 use crate::chat::{Chat, ChatAgentClient, fetch_chats_by_ids, fetch_chats_by_ids_and_query};
 use crate::common::{ErrorResponse, poll_for_updates, query};
-use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
+use golem_rust::{
+    FromSchema, FromWire, IntoSchema, IntoWire, WireSchema, agent_definition, agent_implementation,
+    endpoint,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct ChatRef {
     pub chat_id: String,
     pub created_by: String,
@@ -39,7 +41,7 @@ impl ChatRef {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UserChats {
     pub user_id: String,
     pub chats: Vec<ChatRef>,
@@ -59,7 +61,7 @@ impl UserChats {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UserChatsUpdates {
     pub user_id: String,
     pub chats: Vec<ChatRef>,
@@ -73,7 +75,7 @@ trait UserChatsAgent {
     fn get_chats(&self) -> Option<UserChats>;
 
     #[endpoint(post = "/chats")]
-    fn create_chat(&mut self, participants: HashSet<String>) -> Result<ChatRef, ErrorResponse>;
+    fn create_chat(&mut self, participants: Vec<String>) -> Result<ChatRef, ErrorResponse>;
 
     fn add_chat(
         &mut self,
@@ -120,13 +122,13 @@ impl UserChatsAgent for UserChatsAgentImpl {
         self.state.clone()
     }
 
-    fn create_chat(&mut self, participants: HashSet<String>) -> Result<ChatRef, ErrorResponse> {
+    fn create_chat(&mut self, participants: Vec<String>) -> Result<ChatRef, ErrorResponse> {
         self.with_state(|state| {
             let u_id = state.user_id.clone();
-            let participants_ids: HashSet<String> = participants
+            let participants_ids: Vec<String> = participants
                 .into_iter()
                 .filter(|id| id.clone() != u_id)
-                .collect::<HashSet<_>>();
+                .collect::<Vec<_>>();
             if participants_ids.is_empty() {
                 Err(ErrorResponse {
                     message: "Chat must have at least 2 participants".to_string(),
@@ -224,10 +226,20 @@ impl UserChatsAgent for UserChatsAgentImpl {
         }
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<UserChats> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {

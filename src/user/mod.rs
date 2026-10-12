@@ -1,7 +1,10 @@
 use crate::common::{ErrorResponse, UserConnectionType, get_shard_number, query};
 use email_address::EmailAddress;
 use futures::future::join_all;
-use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
+use golem_rust::{
+    FromSchema, FromWire, IntoSchema, IntoWire, WireSchema, agent_definition, agent_implementation,
+    endpoint,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -13,10 +16,10 @@ pub fn get_user_index_shard(user_id: &str) -> u32 {
     get_shard_number(user_id.to_string(), USER_INDEX_SHARDS)
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct ConnectedUser {
     pub user_id: String,
-    pub connection_types: HashSet<UserConnectionType>,
+    pub connection_types: Vec<UserConnectionType>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -26,20 +29,22 @@ impl ConnectedUser {
         let now = chrono::Utc::now();
         ConnectedUser {
             user_id,
-            connection_types: HashSet::from([connection_type]),
+            connection_types: vec![connection_type],
             created_at: now,
             updated_at: now,
         }
     }
 
     fn add_connection_type(&mut self, connection_type: UserConnectionType) {
-        if self.connection_types.insert(connection_type) {
+        if !self.connection_types.contains(&connection_type) {
+            self.connection_types.push(connection_type);
             self.updated_at = chrono::Utc::now();
         }
     }
 
     fn remove_connection_type(&mut self, connection_type: &UserConnectionType) {
-        if self.connection_types.remove(connection_type) {
+        if self.connection_types.contains(&connection_type) {
+            self.connection_types.retain(|x| *x != *connection_type);
             self.updated_at = chrono::Utc::now();
         }
     }
@@ -49,12 +54,12 @@ impl ConnectedUser {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UpdateResponse {
     pub user_id: String,
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct User {
     pub user_id: String,
     pub name: Option<String>,
@@ -323,10 +328,20 @@ impl UserAgent for UserAgentImpl {
         self.state.clone().filter(|user| user.matches_query(&query))
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<User> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -334,9 +349,9 @@ impl UserAgent for UserAgentImpl {
     }
 }
 
-#[derive(Schema, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, IntoSchema, FromSchema, IntoWire, FromWire, WireSchema)]
 pub struct UserIndexState {
-    pub user_ids: HashSet<String>,
+    pub user_ids: Vec<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -345,14 +360,15 @@ impl UserIndexState {
     fn new() -> Self {
         let now = chrono::Utc::now();
         UserIndexState {
-            user_ids: HashSet::new(),
+            user_ids: vec![],
             created_at: now,
             updated_at: now,
         }
     }
 
     fn add_user(&mut self, user_id: String) -> bool {
-        if self.user_ids.insert(user_id.clone()) {
+        if !self.user_ids.contains(&user_id) {
+            self.user_ids.push(user_id.clone());
             self.updated_at = chrono::Utc::now();
             true
         } else {
@@ -398,10 +414,20 @@ impl UserIndexAgent for UserIndexAgentImpl {
         self.state.clone()
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: UserIndexState = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: u32 = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            shard_id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -1027,7 +1053,7 @@ mod tests {
 
         assert!(result);
         assert_eq!(state.user_ids.len(), 1);
-        assert!(state.user_ids.contains("user1"));
+        assert!(state.user_ids.contains(&"user1".to_string()));
         assert!(state.updated_at > initial_updated_at);
     }
 
@@ -1056,8 +1082,8 @@ mod tests {
         assert!(result2);
         assert!(result3);
         assert_eq!(state.user_ids.len(), 3);
-        assert!(state.user_ids.contains("user1"));
-        assert!(state.user_ids.contains("user2"));
-        assert!(state.user_ids.contains("user3"));
+        assert!(state.user_ids.contains(&"user1".to_string()));
+        assert!(state.user_ids.contains(&"user2".to_string()));
+        assert!(state.user_ids.contains(&"user3".to_string()));
     }
 }
