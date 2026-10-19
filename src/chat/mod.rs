@@ -155,7 +155,7 @@ pub struct AddMessageResponse {
     pub message_id: String,
 }
 
-#[agent_definition(mount = "/v1/social-net/chats/{id}")]
+#[agent_definition(mount = "/v1/social-net/chats/{id}", cors = ["*"])]
 trait ChatAgent {
     fn new(id: String) -> Self;
 
@@ -428,10 +428,20 @@ impl ChatAgent for ChatAgentImpl {
         }
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<Chat> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
