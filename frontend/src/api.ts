@@ -187,8 +187,9 @@ export interface Chat {
 
 export interface ChatRef {
     chat_id: string;
-    created_at: Timestamp;
-    updated_at: Timestamp;
+    created_at: Timestamp | string;
+    updated_at: Timestamp | string;
+    created_by?: string;
 }
 
 export interface UserChats {
@@ -202,3 +203,114 @@ export interface UserChatsUpdates {
     user_id: string;
     chats: ChatRef[];
 }
+
+/**
+ * Stream chat updates from the backend using Golem Durable Streams protocol (PUT + SSE).
+ */
+export async function streamChatUpdates(
+    userId: string,
+    since: string,
+    signal: AbortSignal,
+    onUpdate: (update: ChatRef) => void
+): Promise<void> {
+    if (signal.aborted) return;
+
+    const params = new URLSearchParams();
+    if (since) {
+        params.set('since', since);
+    }
+    params.set('iter-wait-time', '1000');
+
+    // 1. PUT to create or ensure the invocation session
+    const putResponse = await fetch(`${API_BASE_URL}/users/${userId}/chats/updates/stream?${params.toString()}`, {
+        method: 'PUT',
+        signal,
+        headers: {
+            'Content-Type': 'application/json',
+            'Stream-TTL': '300', // 5 minutes sliding idle timeout
+        },
+    });
+
+    if (!putResponse.ok) {
+        throw new Error(`Failed to create chat stream session: ${putResponse.status} ${putResponse.statusText}`);
+    }
+
+    const location = putResponse.headers.get('Location');
+    if (!location) {
+        throw new Error('Missing Location header from stream session creation');
+    }
+
+    // Resolve session path ensuring Vite /api proxy prefix
+    let sessionPath = location;
+    try {
+        if (sessionPath.startsWith('http://') || sessionPath.startsWith('https://')) {
+            sessionPath = new URL(sessionPath).pathname;
+        }
+    } catch {}
+    if (!sessionPath.startsWith('/api')) {
+        sessionPath = `/api${sessionPath.startsWith('/') ? '' : '/'}${sessionPath}`;
+    }
+
+    const slotUrl = `${sessionPath}/streams/%24result?live=sse&offset=-1`;
+
+    // 2. Open EventSource on the slot
+    return new Promise((resolve, reject) => {
+        if (signal.aborted) {
+            fetch(sessionPath, { method: 'DELETE' }).catch(() => {});
+            resolve();
+            return;
+        }
+
+        const eventSource = new EventSource(slotUrl);
+        let isClosed = false;
+
+        const cleanup = () => {
+            if (isClosed) return;
+            isClosed = true;
+            eventSource.close();
+            // 3. DELETE session to immediately cancel the stream on the agent and free worker resources
+            fetch(sessionPath, { method: 'DELETE' }).catch(() => {});
+        };
+
+        signal.addEventListener('abort', () => {
+            cleanup();
+            resolve();
+        });
+
+        const handleData = (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (Array.isArray(data)) {
+                    data.forEach(item => onUpdate(item));
+                } else if (data && typeof data === 'object') {
+                    onUpdate(data);
+                }
+            } catch (err) {
+                console.warn('Failed to parse SSE chat update:', err);
+            }
+        };
+
+        // Golem sends 'event: data', while standard SSE may send 'event: message' or default
+        eventSource.addEventListener('data', handleData as EventListener);
+        eventSource.addEventListener('message', handleData as EventListener);
+        eventSource.onmessage = handleData;
+
+        eventSource.addEventListener('control', (event: any) => {
+            try {
+                const control = JSON.parse(event.data);
+                if (control?.streamClosed) {
+                    cleanup();
+                    resolve();
+                }
+            } catch {}
+        });
+
+        eventSource.onerror = (err) => {
+            if (eventSource.readyState === EventSource.CLOSED || !isClosed) {
+                cleanup();
+                reject(err);
+            }
+        };
+    });
+}
+
