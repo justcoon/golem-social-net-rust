@@ -586,7 +586,6 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         Ok(Self { state: data })
     }
 
-
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
         crate::common::snapshot::serialize(&self.state)
     }
