@@ -44,7 +44,7 @@ pub struct UserPostsUpdates {
     pub posts: Vec<PostRef>,
 }
 
-#[agent_definition(mount = "/v1/social-net/users/{id}")]
+#[agent_definition(mount = "/v1/social-net/users/{id}", cors = ["*"])]
 trait UserPostsAgent {
     fn new(id: String) -> Self;
 
@@ -126,10 +126,20 @@ impl UserPostsAgent for UserPostsAgentImpl {
         })
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<UserPosts> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -137,7 +147,7 @@ impl UserPostsAgent for UserPostsAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users", cors = ["*"])]
 trait UserPostsViewAgent {
     fn new() -> Self;
 

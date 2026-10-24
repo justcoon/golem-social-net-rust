@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue';
-import { api, type Post } from '../api';
+import { api, type Post, formatTimestamp } from '../api';
 import { useUserStore } from '../stores/user';
 import CreatePost from '../components/CreatePost.vue';
 import PostCard from '../components/PostCard.vue';
@@ -42,7 +42,7 @@ async function startPolling() {
                 const newestPost = posts.value[0];
                 if (newestPost) {
                     const createdAt = newestPost.created_at;
-                    since = createdAt.timestamp;
+                    since = formatTimestamp(createdAt) || since;
                 }
             }
 

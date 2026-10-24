@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { api, type Chat, type ChatRef, type LikeType } from '../api';
+import { api, type Chat, type ChatRef, type LikeType, parseDate } from '../api';
 import { useUserStore } from './user';
 
 export const useChatStore = defineStore('chat', () => {
@@ -25,7 +25,7 @@ export const useChatStore = defineStore('chat', () => {
                 chats.value = response.data;
                 // Update lastUpdate based on the most recent chat update
                 const latest = chats.value.reduce((latest, chat) => {
-                    const chatTime = new Date(chat.updated_at.timestamp).getTime();
+                    const chatTime = parseDate(chat.updated_at).getTime();
                     return chatTime > latest ? chatTime : latest;
                 }, 0);
                 if (latest > 0) {

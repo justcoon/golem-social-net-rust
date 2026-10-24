@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { type Post, type Comment, type LikeType, api } from '../api';
+import { type Post, type Comment, type LikeType, api, parseDate } from '../api';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '../stores/user';
 import { storeToRefs } from 'pinia';
@@ -42,17 +42,15 @@ watch(() => props.post, (newPost) => {
 const topLevelComments = computed(() => {
   return comments.value.filter(c => !c.parent_comment_id)
     .sort((a, b) => {
-      const timeA = a.created_at.timestamp;
-      const timeB = b.created_at.timestamp;
-      return new Date(timeA).getTime() - new Date(timeB).getTime();
+      const timeA = parseDate(a.created_at).getTime();
+      const timeB = parseDate(b.created_at).getTime();
+      return timeA - timeB;
     });
 });
 
 const formattedDate = computed(() => {
   const createdAt = localPost.value.created_at;
-  const dateStr = createdAt.timestamp;
-
-  return new Date(dateStr).toLocaleString(undefined, {
+  return parseDate(createdAt).toLocaleString(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   });
@@ -75,7 +73,7 @@ async function submitComment() {
             comment_id: response.data.comment_id,
             content: newComment.value,
             created_by: userId.value,
-            created_at: { timestamp: createdNow },
+            created_at: createdNow,
             likes: []
         };
         

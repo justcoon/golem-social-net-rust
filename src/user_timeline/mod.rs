@@ -178,10 +178,20 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
         })
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<UserTimeline> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -189,7 +199,7 @@ impl UserTimelineAgent for UserTimelineAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users", cors = ["*"])]
 trait UserTimelineViewAgent {
     fn new() -> Self;
 
@@ -285,7 +295,7 @@ impl UserTimelineViewAgent for UserTimelineViewAgentImpl {
     }
 }
 
-#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users")]
+#[agent_definition(mode = "ephemeral", mount = "/v1/social-net/users", cors = ["*"])]
 trait UserTimelineUpdatesAgent {
     fn new() -> Self;
 

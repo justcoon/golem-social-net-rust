@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, type User, type Post, type UserConnectionType } from '../api';
+import { api, type User, type Post, type UserConnectionType, parseDate } from '../api';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { storeToRefs } from 'pinia';
@@ -262,7 +262,7 @@ watch(() => route.params.id, () => {
            <div class="bg-neutral-900 border border-neutral-800 rounded-xl p-6">
              <h3 class="font-bold text-gray-200 mb-4">About</h3>
              <p class="text-gray-400 text-sm">
-                Joined {{ new Date(user.created_at?.timestamp || Date.now()).toLocaleDateString() }}
+                Joined {{ user?.created_at ? parseDate(user.created_at).toLocaleDateString() : 'Recently' }}
              </p>
            </div>
            

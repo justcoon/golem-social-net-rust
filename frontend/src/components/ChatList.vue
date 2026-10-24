@@ -4,6 +4,7 @@ import { useUserStore } from '../stores/user';
 import { storeToRefs } from 'pinia';
 import { computed, ref } from 'vue';
 import ConnectionSelect from './ConnectionSelect.vue';
+import { parseDate } from '../api';
 const chatStore = useChatStore();
 const userStore = useUserStore();
 const { chats, activeChatId, isLoading } = storeToRefs(chatStore);
@@ -15,8 +16,8 @@ const createChatError = ref<string | null>(null);
 
 const sortedChats = computed(() => {
   return [...chats.value].sort((a, b) => {
-    const timeA = new Date(a.updated_at.timestamp).getTime();
-    const timeB = new Date(b.updated_at.timestamp).getTime();
+    const timeA = parseDate(a.updated_at).getTime();
+    const timeB = parseDate(b.updated_at).getTime();
     return timeB - timeA;
   });
 });
@@ -41,8 +42,8 @@ function getChatName(chat: any) {
   return chat.participants.join(', ');
 }
 
-function getFormattedDate(dateStr: string) {
-  const date = new Date(dateStr);
+function getFormattedDate(val: any) {
+  const date = parseDate(val);
   const now = new Date();
   if (date.toDateString() === now.toDateString()) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -119,7 +120,7 @@ function getFormattedDate(dateStr: string) {
           </div>
         </div>
         <div class="text-[10px] text-gray-600 ml-2 whitespace-nowrap pt-1">
-          {{ getFormattedDate(chat.updated_at.timestamp) }}
+          {{ getFormattedDate(chat.updated_at) }}
         </div>
       </div>
     </div>
