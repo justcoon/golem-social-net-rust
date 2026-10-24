@@ -11,8 +11,26 @@ export const apiClient = axios.create({
 
 export type UserConnectionType = 'Friend' | 'Following' | 'Follower'
 
-export interface Timestamp {
-    timestamp: string;
+export type Timestamp = string | { timestamp: string };
+
+export function parseDate(val?: Timestamp | string | number | null): Date {
+    if (!val) return new Date();
+    if (typeof val === 'string' || typeof val === 'number') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? new Date() : d;
+    }
+    if (typeof val === 'object' && 'timestamp' in val && val.timestamp) {
+        const d = new Date(val.timestamp);
+        return isNaN(d.getTime()) ? new Date() : d;
+    }
+    return new Date();
+}
+
+export function formatTimestamp(val?: Timestamp | string | null): string {
+    if (!val) return '';
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object' && 'timestamp' in val && val.timestamp) return val.timestamp;
+    return String(val);
 }
 
 // Types based on inferred backend usage
