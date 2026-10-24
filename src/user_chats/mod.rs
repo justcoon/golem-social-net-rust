@@ -1,5 +1,5 @@
 use crate::chat::{Chat, ChatAgentClient, fetch_chats_by_ids, fetch_chats_by_ids_and_query};
-use crate::common::{ErrorResponse, poll_for_updates, query, stream_updates};
+use crate::common::{ErrorResponse, poll_for_updates, query};
 use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -349,16 +349,6 @@ trait UserChatsUpdatesAgent {
         iter_wait_time: Option<u32>,
         max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>>;
-
-    #[endpoint(
-        get = "/{user_id}/chats/updates/stream?since={since}&iter-wait-time={iter_wait_time}"
-    )]
-    fn get_chats_updates_stream(
-        &mut self,
-        user_id: String,
-        since: Option<String>,
-        iter_wait_time: Option<u32>,
-    ) -> golem_rust::agentic::AgentStream<ChatRef>;
 }
 
 struct UserChatsUpdatesAgentImpl {}
@@ -394,29 +384,5 @@ impl UserChatsUpdatesAgent for UserChatsUpdatesAgentImpl {
             "get chats updates",
         )
         .await
-    }
-
-    fn get_chats_updates_stream(
-        &mut self,
-        user_id: String,
-        since: Option<String>,
-        iter_wait_time: Option<u32>,
-    ) -> golem_rust::agentic::AgentStream<ChatRef> {
-        let updates_since = since.map(|s| {
-            chrono::DateTime::parse_from_rfc3339(&s)
-                .unwrap_or_default()
-                .into()
-        });
-        stream_updates(
-            user_id,
-            updates_since,
-            iter_wait_time,
-            |uid, since| async move {
-                let res = UserChatsAgentClient::get(uid).get_updates(since).await;
-                res.map(|r| r.chats)
-            },
-            |chat| chat.updated_at,
-            "get chats updates stream",
-        )
     }
 }

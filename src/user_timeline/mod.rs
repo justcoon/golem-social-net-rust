@@ -1,5 +1,5 @@
 use crate::common::UserConnectionType;
-use crate::common::{poll_for_updates, query, query::Query, stream_updates};
+use crate::common::{poll_for_updates, query, query::Query};
 use crate::post::{Post, fetch_posts_by_ids, fetch_posts_by_ids_and_query};
 use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
@@ -309,16 +309,6 @@ trait UserTimelineUpdatesAgent {
         iter_wait_time: Option<u32>,
         max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>>;
-
-    #[endpoint(
-        get = "/{user_id}/timeline/posts/updates/stream?since={since}&iter-wait-time={iter_wait_time}"
-    )]
-    fn get_posts_updates_stream(
-        &mut self,
-        user_id: String,
-        since: Option<String>,
-        iter_wait_time: Option<u32>,
-    ) -> golem_rust::agentic::AgentStream<PostRef>;
 }
 
 struct UserTimelineUpdatesAgentImpl {}
@@ -353,29 +343,5 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
             "get posts updates",
         )
         .await
-    }
-
-    fn get_posts_updates_stream(
-        &mut self,
-        user_id: String,
-        since: Option<String>,
-        iter_wait_time: Option<u32>,
-    ) -> golem_rust::agentic::AgentStream<PostRef> {
-        let updates_since = since.map(|s| {
-            chrono::DateTime::parse_from_rfc3339(&s)
-                .unwrap_or_default()
-                .into()
-        });
-        stream_updates(
-            user_id,
-            updates_since,
-            iter_wait_time,
-            |uid, since| async move {
-                let res = UserTimelineAgentClient::get(uid).get_updates(since).await;
-                res.map(|r| r.posts)
-            },
-            |post| post.updated_at,
-            "get posts updates stream",
-        )
     }
 }

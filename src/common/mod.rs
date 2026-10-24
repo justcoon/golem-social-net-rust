@@ -255,51 +255,6 @@ where
     result
 }
 
-pub fn stream_updates<T, UpdatesFn, Fut, TimestampFn>(
-    user_id: String,
-    updates_since: Option<chrono::DateTime<chrono::Utc>>,
-    iter_wait_time: Option<u32>,
-    get_updates_fn: UpdatesFn,
-    get_timestamp_fn: TimestampFn,
-    log_prefix: &'static str,
-) -> golem_rust::agentic::AgentStream<T>
-where
-    T: golem_rust::IntoWire + golem_rust::FromWire + Send + 'static,
-    UpdatesFn: Fn(String, chrono::DateTime<chrono::Utc>) -> Fut + 'static,
-    Fut: std::future::Future<Output = Option<Vec<T>>>,
-    TimestampFn: Fn(&T) -> chrono::DateTime<chrono::Utc> + 'static,
-{
-    let since = updates_since.unwrap_or_else(chrono::Utc::now);
-    let iter_duration = Duration::from_millis(iter_wait_time.unwrap_or(1000) as u64);
-    let (mut writer, output) = golem_rust::agentic::AgentStream::new();
-
-    golem_rust::agentic::spawn_local(async move {
-        let mut current_since = since;
-        loop {
-            log::info!("{log_prefix} - user id: {user_id}, since: {current_since}");
-            let res = get_updates_fn(user_id.clone(), current_since).await;
-
-            if let Some(items) = res {
-                let mut latest_timestamp = current_since;
-                for item in items {
-                    let ts = get_timestamp_fn(&item);
-                    if ts > latest_timestamp {
-                        latest_timestamp = ts;
-                    }
-                    if writer.write_one(item).await.is_err() {
-                        return;
-                    }
-                }
-                current_since = latest_timestamp;
-            }
-
-            wstd::task::sleep(iter_duration.into()).await;
-        }
-    });
-
-    output
-}
-
 pub fn get_shard_number(id: String, num_of_shards: u32) -> u32 {
     assert!(num_of_shards > 0, "Number of shards must be greater than 0");
 
