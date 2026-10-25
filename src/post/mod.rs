@@ -201,7 +201,7 @@ pub struct AddCommentResponse {
     pub comment_id: String,
 }
 
-#[agent_definition(mount = "/v1/social-net/posts/{id}")]
+#[agent_definition(mount = "/v1/social-net/posts/{id}", cors = ["*"])]
 trait PostAgent {
     fn new(id: String) -> Self;
 
@@ -451,10 +451,20 @@ impl PostAgent for PostAgentImpl {
         }
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: Option<Post> = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        let mut parameters = golem_rust::agentic::DirectAgentInput::new(context.parameters)
+            .map_err(|error| error.to_string())?;
+        let id: String = parameters.take().map_err(|error| error.to_string())?;
+        parameters.finish().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            _id: id,
+            state: data,
+        })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {
@@ -568,10 +578,12 @@ impl TimelinesUpdaterAgent for TimelinesUpdaterAgentImpl {
         self.execute_posts_updates().await;
     }
 
-    async fn load_snapshot(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+    async fn load_snapshot(
+        bytes: Vec<u8>,
+        _context: golem_rust::agentic::SnapshotRestoreContext,
+    ) -> Result<Self, String> {
         let data: PostUpdates = crate::common::snapshot::deserialize(&bytes)?;
-        self.state = data;
-        Ok(())
+        Ok(Self { state: data })
     }
 
     async fn save_snapshot(&self) -> Result<Vec<u8>, String> {

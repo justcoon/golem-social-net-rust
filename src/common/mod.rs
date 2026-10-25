@@ -205,16 +205,16 @@ pub(crate) mod snapshot {
     }
 }
 
-pub async fn poll_for_updates<T, F, Fut>(
+pub async fn poll_for_updates<T, UpdatesFn, Fut>(
     user_id: String,
     updates_since: Option<chrono::DateTime<chrono::Utc>>,
     iter_wait_time: Option<u32>,
     max_wait_time: Option<u32>,
-    get_updates_fn: F,
+    get_updates_fn: UpdatesFn,
     log_prefix: &str,
 ) -> Option<Vec<T>>
 where
-    F: Fn(String, chrono::DateTime<chrono::Utc>) -> Fut,
+    UpdatesFn: Fn(String, chrono::DateTime<chrono::Utc>) -> Fut,
     Fut: std::future::Future<Output = Option<Vec<T>>>,
 {
     let since = updates_since.unwrap_or(chrono::Utc::now());

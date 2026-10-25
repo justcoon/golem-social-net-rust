@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { type Message, type LikeType, type UserLikeTuple } from '../api';
+import { type Message, type LikeType, type UserLikeTuple, parseDate } from '../api';
 import LikeReactions from './LikeReactions.vue';
 
 const props = defineProps<{
@@ -23,7 +23,7 @@ function handleDelete() {
 const isOwnMessage = computed(() => props.message.created_by === props.currentUserId);
 
 const formattedDate = computed(() => {
-  return new Date(props.message.created_at.timestamp).toLocaleString(undefined, {
+  return parseDate(props.message.created_at).toLocaleString(undefined, {
     timeStyle: 'short',
   });
 });

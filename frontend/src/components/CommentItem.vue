@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { type Comment, type LikeType, api } from '../api';
+import { type Comment, type LikeType, api, parseDate } from '../api';
 import LikeReactions from './LikeReactions.vue';
 import { useUserStore } from '../stores/user';
 import { storeToRefs } from 'pinia';
@@ -30,7 +30,7 @@ const canDelete = computed(() => userId.value === props.comment.created_by);
 
 const childComments = computed(() => {
   return props.allComments.filter(c => c.parent_comment_id === props.comment.comment_id)
-    .sort((a, b) => new Date(a.created_at.timestamp).getTime() - new Date(b.created_at.timestamp).getTime());
+    .sort((a, b) => parseDate(a.created_at).getTime() - parseDate(b.created_at).getTime());
 });
 
 const totalNestedCount = computed(() => {
@@ -134,7 +134,7 @@ async function submitReply() {
       comment_id: response.data.comment_id,
       content: replyContent.value,
       created_by: userId.value,
-      created_at: { timestamp: new Date().toISOString() },
+      created_at: new Date().toISOString(),
       parent_comment_id: props.comment.comment_id,
       likes: []
     };
@@ -166,7 +166,7 @@ async function submitReply() {
             collapsed {{ totalNestedCount > 0 ? `(${totalNestedCount} replies)` : '' }}
           </span>
         </div>
-        <span class="text-[10px] text-gray-600">{{ new Date(comment.created_at.timestamp).toLocaleString() }}</span>
+        <span class="text-[10px] text-gray-600">{{ parseDate(comment.created_at).toLocaleString() }}</span>
         <button 
           v-if="canDelete" 
           @click="handleDelete" 

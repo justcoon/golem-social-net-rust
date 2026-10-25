@@ -35,9 +35,13 @@ This will import all sample data into your Golem Social Net application.
 
 ## Data Structure
 
-### Users (`users.csv`)
-- `user-id`: Unique identifier for the user
-- `body`: JSON string containing user details (name, description, etc.)
+### User Names (`users_name.csv`)
+- `user_id`: Unique identifier for the user
+- `body`: JSON string containing user name (`{"name":"..."}`)
+
+### User Emails (`users_email.csv`)
+- `user_id`: Unique identifier for the user
+- `body`: JSON string containing user email (`{"email":"..."}`)
 
 ### Friends (`friends.csv`)
 - `user-id`: Unique identifier for the user
