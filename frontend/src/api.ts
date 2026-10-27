@@ -205,13 +205,13 @@ export interface UserChatsUpdates {
 }
 
 /**
- * Stream chat updates from the backend using Golem Durable Streams protocol (PUT + SSE).
+ * Generic helper to stream updates from a Durable Streams endpoint (PUT + SSE).
  */
-export async function streamChatUpdates(
-    userId: string,
+async function streamUpdates<T>(
+    endpointPath: string,
     since: string,
     signal: AbortSignal,
-    onUpdate: (update: ChatRef) => void
+    onUpdate: (update: T) => void
 ): Promise<void> {
     if (signal.aborted) return;
 
@@ -222,7 +222,7 @@ export async function streamChatUpdates(
     params.set('iter-wait-time', '1000');
 
     // 1. PUT to create or ensure the invocation session
-    const putResponse = await fetch(`${API_BASE_URL}/users/${userId}/chats/updates/stream?${params.toString()}`, {
+    const putResponse = await fetch(`${API_BASE_URL}${endpointPath}?${params.toString()}`, {
         method: 'PUT',
         signal,
         headers: {
@@ -232,7 +232,7 @@ export async function streamChatUpdates(
     });
 
     if (!putResponse.ok) {
-        throw new Error(`Failed to create chat stream session: ${putResponse.status} ${putResponse.statusText}`);
+        throw new Error(`Failed to create stream session at ${endpointPath}: ${putResponse.status} ${putResponse.statusText}`);
     }
 
     const location = putResponse.headers.get('Location');
@@ -251,7 +251,7 @@ export async function streamChatUpdates(
         sessionPath = `/api${sessionPath.startsWith('/') ? '' : '/'}${sessionPath}`;
     }
 
-    const slotUrl = `${sessionPath}/streams/%24result?live=sse&offset=-1`;
+    const slotUrl = `${sessionPath}/streams/updates?live=sse&offset=-1`;
 
     // 2. Open EventSource on the slot
     return new Promise((resolve, reject) => {
@@ -286,7 +286,7 @@ export async function streamChatUpdates(
                     onUpdate(data);
                 }
             } catch (err) {
-                console.warn('Failed to parse SSE chat update:', err);
+                console.warn('Failed to parse SSE update:', err);
             }
         };
 
@@ -313,4 +313,29 @@ export async function streamChatUpdates(
         };
     });
 }
+
+/**
+ * Stream chat updates from the backend using Golem Durable Streams protocol (PUT + SSE).
+ */
+export async function streamChatUpdates(
+    userId: string,
+    since: string,
+    signal: AbortSignal,
+    onUpdate: (update: ChatRef) => void
+): Promise<void> {
+    return streamUpdates<ChatRef>(`/users/${userId}/chats/updates/stream`, since, signal, onUpdate);
+}
+
+/**
+ * Stream timeline post updates from the backend using Golem Durable Streams protocol (PUT + SSE).
+ */
+export async function streamTimelineUpdates(
+    userId: string,
+    since: string,
+    signal: AbortSignal,
+    onUpdate: (update: PostRef) => void
+): Promise<void> {
+    return streamUpdates<PostRef>(`/users/${userId}/timeline/posts/updates/stream`, since, signal, onUpdate);
+}
+
 

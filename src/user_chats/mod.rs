@@ -349,16 +349,6 @@ trait UserChatsUpdatesAgent {
         iter_wait_time: Option<u32>,
         max_wait_time: Option<u32>,
     ) -> Option<Vec<ChatRef>>;
-
-    #[endpoint(
-        get = "/{user_id}/chats/updates/stream?since={since}&iter-wait-time={iter_wait_time}"
-    )]
-    fn get_chats_updates_stream(
-        &mut self,
-        user_id: String,
-        since: Option<String>,
-        iter_wait_time: Option<u32>,
-    ) -> golem_rust::agentic::AgentStream<ChatRef>;
 }
 
 struct UserChatsUpdatesAgentImpl {}
@@ -395,8 +385,36 @@ impl UserChatsUpdatesAgent for UserChatsUpdatesAgentImpl {
         )
         .await
     }
+}
 
-    fn get_chats_updates_stream(
+#[agent_definition(mount = "/v1/social-net/users", phantom_agent = true, cors = ["*"])]
+trait UserChatsUpdatesStreamAgent {
+    fn new() -> Self;
+
+    #[endpoint(
+        get = "/{user_id}/chats/updates/stream?since={since}&iter-wait-time={iter_wait_time}",
+        durable_streams(
+            output("$result", name = "updates"),
+            max_concurrent_readers_per_stream = 8
+        )
+    )]
+    fn get_chats_updates(
+        &mut self,
+        user_id: String,
+        since: Option<String>,
+        iter_wait_time: Option<u32>,
+    ) -> golem_rust::agentic::AgentStream<ChatRef>;
+}
+
+struct UserChatsUpdatesStreamAgentImpl {}
+
+#[agent_implementation]
+impl UserChatsUpdatesStreamAgent for UserChatsUpdatesStreamAgentImpl {
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn get_chats_updates(
         &mut self,
         user_id: String,
         since: Option<String>,

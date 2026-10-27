@@ -293,7 +293,7 @@ where
                 current_since = latest_timestamp;
             }
 
-            wstd::task::sleep(iter_duration.into()).await;
+            std::thread::sleep(iter_duration);
         }
     });
 

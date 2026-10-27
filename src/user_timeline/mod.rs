@@ -309,16 +309,6 @@ trait UserTimelineUpdatesAgent {
         iter_wait_time: Option<u32>,
         max_wait_time: Option<u32>,
     ) -> Option<Vec<PostRef>>;
-
-    #[endpoint(
-        get = "/{user_id}/timeline/posts/updates/stream?since={since}&iter-wait-time={iter_wait_time}"
-    )]
-    fn get_posts_updates_stream(
-        &mut self,
-        user_id: String,
-        since: Option<String>,
-        iter_wait_time: Option<u32>,
-    ) -> golem_rust::agentic::AgentStream<PostRef>;
 }
 
 struct UserTimelineUpdatesAgentImpl {}
@@ -354,8 +344,36 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
         )
         .await
     }
+}
 
-    fn get_posts_updates_stream(
+#[agent_definition(mount = "/v1/social-net/users", phantom_agent = true, cors = ["*"])]
+trait UserTimelineUpdatesStreamAgent {
+    fn new() -> Self;
+
+    #[endpoint(
+        get = "/{user_id}/timeline/posts/updates/stream?since={since}&iter-wait-time={iter_wait_time}",
+        durable_streams(
+            output("$result", name = "updates"),
+            max_concurrent_readers_per_stream = 8
+        )
+    )]
+    fn get_posts_updates(
+        &mut self,
+        user_id: String,
+        since: Option<String>,
+        iter_wait_time: Option<u32>,
+    ) -> golem_rust::agentic::AgentStream<PostRef>;
+}
+
+struct UserTimelineUpdatesStreamAgentImpl {}
+
+#[agent_implementation]
+impl UserTimelineUpdatesStreamAgent for UserTimelineUpdatesStreamAgentImpl {
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn get_posts_updates(
         &mut self,
         user_id: String,
         since: Option<String>,
