@@ -1,5 +1,5 @@
 use crate::common::UserConnectionType;
-use crate::common::{poll_for_updates, query, query::Query};
+use crate::common::{poll_for_updates, query, query::Query, stream_updates};
 use crate::post::{Post, fetch_posts_by_ids, fetch_posts_by_ids_and_query};
 use golem_rust::{Schema, agent_definition, agent_implementation, endpoint};
 use serde::{Deserialize, Serialize};
@@ -343,5 +343,57 @@ impl UserTimelineUpdatesAgent for UserTimelineUpdatesAgentImpl {
             "get posts updates",
         )
         .await
+    }
+}
+
+#[agent_definition(mount = "/v1/social-net/users", phantom_agent = true, cors = ["*"])]
+trait UserTimelineUpdatesStreamAgent {
+    fn new() -> Self;
+
+    #[endpoint(
+        get = "/{user_id}/timeline/posts/updates/stream?since={since}&iter-wait-time={iter_wait_time}",
+        durable_streams(
+            output("$result", name = "updates"),
+            max_concurrent_readers_per_stream = 8
+        )
+    )]
+    fn get_posts_updates(
+        &mut self,
+        user_id: String,
+        since: Option<String>,
+        iter_wait_time: Option<u32>,
+    ) -> golem_rust::agentic::AgentStream<PostRef>;
+}
+
+struct UserTimelineUpdatesStreamAgentImpl {}
+
+#[agent_implementation]
+impl UserTimelineUpdatesStreamAgent for UserTimelineUpdatesStreamAgentImpl {
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn get_posts_updates(
+        &mut self,
+        user_id: String,
+        since: Option<String>,
+        iter_wait_time: Option<u32>,
+    ) -> golem_rust::agentic::AgentStream<PostRef> {
+        let updates_since = since.map(|s| {
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .unwrap_or_default()
+                .into()
+        });
+        stream_updates(
+            user_id,
+            updates_since,
+            iter_wait_time,
+            |uid, since| async move {
+                let res = UserTimelineAgentClient::get(uid).get_updates(since).await;
+                res.map(|r| r.posts)
+            },
+            |post| post.updated_at,
+            "get posts updates stream",
+        )
     }
 }
